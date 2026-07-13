@@ -1,235 +1,398 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../firebase'; 
-import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import Calendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css'; 
+import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import MindMapWidget from './components/MindMapWidget';
 
-export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, onAddNodeClick, onEditNodeClick, onDeleteNodeClick }) {
-  const [mindmaps, setMindmaps] = useState([]);
-  const [newTitle, setNewTitle] = useState('');
+// 파이어베이스 DB 인스턴스 및 라이브러리 메서드 로드
+import { db } from './firebase';
+import { doc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+
+const iosLiquidGlassTheme = `
+  * {
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+  body, html, #root { 
+    margin: 0 !important; 
+    padding: 0 !important;
+    background-color: #000000; 
+    color: #ffffff; 
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.3px;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    overflow-x: hidden;
+  }
+  .react-calendar { background: transparent !important; color: #ffffff !important; border: none !important; width: 100% !important; font-family: inherit; }
+  .react-calendar abbr { text-decoration: none !important; border-bottom: none !important; cursor: default; }
+  .react-calendar__navigation button { color: #ffffff !important; min-width: 30px; background: none; font-size: 13px; font-weight: 500; }
+  .react-calendar__navigation button:enabled:hover { background-color: rgba(255,255,255,0.06); border-radius: 6px; }
+  .react-calendar__month-view__weekdays { color: rgba(255,255,255,0.3) !important; text-transform: uppercase; font-weight: 600; font-size: 0.7rem; letter-spacing: 0.5px; padding-bottom: 8px; }
+  .react-calendar__tile { color: #ffffff !important; background: none; border: none; padding: 10px 0; font-size: 0.85rem; position: relative; }
+  .react-calendar__tile:enabled:hover { background-color: rgba(255,255,255,0.08) !important; border-radius: 12px; }
+  .react-calendar__tile--now { background: rgba(255,255,255,0.15) !important; border-radius: 12px; font-weight: 600; }
+  .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; }
   
-  // 드래그 상태 관리
-  const [dragState, setDragState] = useState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialNodeX: 0, initialNodeY: 0 });
-  const containerRef = useRef(null);
+  .sat-tile { color: #30a9ff !important; }
+  .sun-tile { color: #ff3b30 !important; }
 
-  const mindmapCollection = collection(db, 'mindmaps');
+  .ios-resize-trigger { position: absolute; right: 8px; bottom: 8px; width: 12px; height: 12px; cursor: se-resize; z-index: 15; }
+  .ios-resize-trigger::after { content: ""; position: absolute; right: 2px; bottom: 2px; width: 4px; height: 4px; border-right: 2px solid rgba(255, 255, 255, 0.25); border-bottom: 2px solid rgba(255, 255, 255, 0.25); }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
+`;
+
+if (typeof document !== 'undefined') {
+  const styleTag = document.createElement('style');
+  styleTag.innerHTML = iosLiquidGlassTheme;
+  document.head.appendChild(styleTag);
+}
+
+const iosLiquidGlassWidget = {
+  background: 'linear-gradient(135deg, rgba(32, 32, 36, 0.7) 0%, rgba(16, 16, 18, 0.75) 100%)',
+  backdropFilter: 'blur(40px) saturate(200%)',
+  WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+  borderRadius: '28px', 
+  padding: '20px',
+  border: '1px solid rgba(255, 255, 255, 0.12)',
+  boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 32px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2)',
+  color: '#ffffff',
+  display: 'flex',
+  flexDirection: 'column',
+  boxSizing: 'border-box',
+  overflow: 'hidden',
+  position: 'relative',
+  transition: 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.2s, opacity 0.2s',
+  cursor: 'grab'
+};
+
+const WEATHER_API_KEY = "2cabd2173d9f6036bf418d61e79b48f8";
+
+const getAqiStatus = (aqi) => {
+  switch(aqi) {
+    case 1: return { label: "좋음", color: "#34c759" }; 
+    case 2: return { label: "보통", color: "#ffcc00" }; 
+    case 3: return { label: "주의", color: "#ff9500" }; 
+    case 4: return { label: "나쁨", color: "#ff3b30" }; 
+    case 5: return { label: "위험", color: "#af52de" }; 
+    default: return { label: "정보 없음", color: "#8e8e93" };
+  }
+};
+
+const STAGES = [
+  { id: 'plan', label: '기획' },
+  { id: 'design', label: '설계' },
+  { id: 'simulation', label: '해석' },
+  { id: 'done', label: '완료' }
+];
+
+function DashboardContent() {
+  const [time, setTime] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [events, setEvents] = useState([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [accessToken, setAccessToken] = useState('');
+  const [weatherData, setWeatherData] = useState({ weather: null, pollution: null });
+  const [weatherLoading, setWeatherLoading] = useState(true);
+  const [weatherError, setWeatherError] = useState(null);
+
+  const [isMindMapOpen, setIsMindMapOpen] = useState(false);
+  const [currentMindMap, setCurrentMindMap] = useState(null);
+  const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add' });
+
+  const [tasks, setTasks] = useState(() => {
+    const saved = localStorage.getItem('dashboard_tasks');
+    return saved ? JSON.parse(saved) : [
+      { id: 't1', title: '527mm Enclosure 구조해석 및 압력 검토', stage: 'simulation', progress: 75 },
+      { id: 't2', title: '10-BAY GIS 가스 계통도 CAD 도면 설계', stage: 'design', progress: 40 },
+      { id: 't3', title: 'M30 앵커 볼트 전단 강도 스펙 수립', stage: 'plan', progress: 10 }
+    ];
+  });
+  
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+
+  const [widgetOrder, setWidgetOrder] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_order');
+    return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
+  });
+
+  const [widgetSizes, setWidgetSizes] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_sizes');
+    return saved ? JSON.parse(saved) : {
+      clock: { width: 360, height: 260 }, 
+      weather: { width: 320, height: 260 },
+      workflow: { width: 664, height: 340 },
+      calendar: { width: 360, height: 260 },
+      scheduler: { width: 320, height: 260 },
+      mindmap: { width: 360, height: 260 } 
+    };
+  });
+
+  const [draggingId, setDraggingId] = useState(null);
+  const [resizeTarget, setResizeTarget] = useState(null);
+  const [startSize, setStartSize] = useState({ width: 0, height: 0 });
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    if (isEditorMode) return;
-    const unsubscribe = onSnapshot(mindmapCollection, (snapshot) => {
-      const maps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMindmaps(maps);
+    try {
+      if (!db) return;
+
+      const layoutConfigRef = doc(db, "dashboard", "layoutConfig");
+      const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const remoteData = docSnap.data();
+          if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
+          if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
+        }
+      });
+
+      const tasksRef = doc(db, "dashboard", "taskData");
+      const unsubscribeTasks = onSnapshot(tasksRef, (docSnap) => {
+        if (docSnap.exists() && docSnap.data()?.list) setTasks(docSnap.data().list);
+      });
+
+      return () => {
+        unsubscribeLayout();
+        unsubscribeTasks();
+      };
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  // 한글 주석: 데이터 휘발 버그 해결을 위해 실시간 Firestore 문서 데이터 동적 바인딩 파이프라인 결합
+  useEffect(() => {
+    if (!isMindMapOpen || !currentMindMap?.id) return;
+    const unsubscribe = onSnapshot(doc(db, 'mindmaps', currentMindMap.id), (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrentMindMap({ id: docSnap.id, ...docSnap.data() });
+      }
     });
     return () => unsubscribe();
-  }, [isEditorMode]);
+  }, [isMindMapOpen]);
 
-  // 한글 주석: 노드 자동 정렬 분산 및 중심(root) 블록 중앙 배치 알고리즘
-  const calculateAutoLayout = (nodes = [], edges = []) => {
-    if (nodes.length === 0) return [];
-    
-    const nodeMap = new Map(nodes.map(n => [n.id, { ...n, children: [] }]));
-    let rootNode = null;
+  const saveLayoutToFirestore = async (newOrder, newSizes) => {
+    localStorage.setItem('dashboard_widget_order', JSON.stringify(newOrder));
+    localStorage.setItem('dashboard_widget_sizes', JSON.stringify(newSizes));
+    try {
+      if (!db) return;
+      await setDoc(doc(db, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true });
+    } catch (err) { console.error(err); }
+  };
 
-    edges.forEach(edge => {
-      const parent = nodeMap.get(edge.source);
-      const child = nodeMap.get(edge.target);
-      if (parent && child) parent.children.push(child);
-    });
+  const saveTasksToFirestore = async (newTaskList) => {
+    localStorage.setItem('dashboard_tasks', JSON.stringify(newTaskList));
+    try {
+      if (!db) return;
+      await setDoc(doc(db, "dashboard", "taskData"), { list: newTaskList });
+    } catch (err) { console.error(err); }
+  };
 
-    nodes.forEach(n => {
-      if (n.id === 'root') rootNode = nodeMap.get(n.id);
-    });
+  const handleDragStart = (id) => { if (!resizeTarget) setDraggingId(id); };
+  const handleDragOver = (e) => { e.preventDefault(); };
+  const handleDrop = (targetId) => {
+    if (!draggingId || draggingId === targetId) return;
+    const currentOrder = [...widgetOrder];
+    const dragIdx = currentOrder.indexOf(draggingId);
+    const targetIdx = currentOrder.indexOf(targetId);
+    currentOrder[dragIdx] = targetId;
+    currentOrder[targetIdx] = draggingId;
+    setWidgetOrder(currentOrder);
+    setDraggingId(null);
+    saveLayoutToFirestore(currentOrder, widgetSizes); 
+  };
 
-    if (!rootNode) rootNode = nodeMap.get(nodes[0].id);
+  const initResize = (e, id) => {
+    e.preventDefault(); e.stopPropagation();
+    setResizeTarget(id);
+    setStartSize({ width: widgetSizes[id].width, height: widgetSizes[id].height });
+    setStartPos({ x: e.clientX, y: e.clientY });
+  };
 
-    // 에디터 화면 기준 완전 중앙 정렬점 연산
-    const startX = 150;
-    const startY = 300;
-    
-    rootNode.x = startX;
-    rootNode.y = startY;
-
-    const levelWidth = 240; 
-    const nodeHeight = 70;  
-
-    const assignPositions = (node, currentX, depth) => {
-      if (!node.children || node.children.length === 0) return;
-
-      const totalHeight = node.children.length * nodeHeight;
-      let currentY = node.y - (totalHeight / 2) + (nodeHeight / 2);
-
-      node.children.forEach(child => {
-        child.x = currentX + levelWidth;
-        child.y = currentY;
-        currentY += nodeHeight;
-        assignPositions(child, child.x, depth + 1);
+  useEffect(() => {
+    const doResize = (e) => {
+      if (!resizeTarget) return;
+      const deltaX = e.clientX - startPos.x;
+      const deltaY = e.clientY - startPos.y;
+      setWidgetSizes(prev => {
+        const next = { ...prev, [resizeTarget]: { width: Math.max(260, startSize.width + deltaX), height: Math.max(220, startSize.height + deltaY) } };
+        return next;
       });
     };
-
-    assignPositions(rootNode, startX, 1);
-    return Array.from(nodeMap.values());
-  };
-
-  const autoLayoutNodes = (isEditorMode && currentMap) ? calculateAutoLayout(currentMap.nodes, currentMap.edges) : [];
-
-  const handleCreateMap = async (e) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
-
-    const newMap = {
-      title: newTitle,
-      createdAt: new Date().toISOString(),
-      nodes: [{ id: 'root', text: newTitle, x: 150, y: 300 }],
-      edges: []
+    const stopResize = () => {
+      if (resizeTarget) saveLayoutToFirestore(widgetOrder, widgetSizes);
+      setResizeTarget(null);
     };
+    if (resizeTarget) {
+      window.addEventListener('mousemove', doResize);
+      window.addEventListener('mouseup', stopResize);
+    }
+    return () => {
+      window.removeEventListener('mousemove', doResize);
+      window.removeEventListener('mouseup', stopResize);
+    };
+  }, [resizeTarget, startPos, startSize]);
 
-    await addDoc(mindmapCollection, newMap);
-    setNewTitle('');
+  useEffect(() => {
+    const timer = setInterval(() => { setTime(new Date()); }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      const [weatherRes, pollutionRes] = await Promise.all([
+        fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${WEATHER_API_KEY}&units=metric&lang=kr`),
+        fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${latitude}&lon=${longitude}&appid=${WEATHER_API_KEY}`)
+      ]);
+      setWeatherData({ weather: await weatherRes.json(), pollution: await pollutionRes.json() });
+      setWeatherLoading(false);
+    });
+  }, []);
+
+  const clockFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  const clockParts = clockFormatter.formatToParts(time);
+  const hours = clockParts.find(p => p.type === 'hour').value;
+  const minutes = clockParts.find(p => p.type === 'minute').value;
+  const seconds = clockParts.find(p => p.type === 'second').value;
+  const ampm = clockParts.find(p => p.type === 'dayPeriod').value;
+
+  const login = useGoogleLogin({
+    onSuccess: (res) => { setIsLoggedIn(true); setAccessToken(res.access_token); },
+    scope: 'https://www.googleapis.com/auth/calendar.readonly'
+  });
+
+  const tileClassNameGetter = ({ date, view }) => {
+    if (view === 'month') {
+      const day = date.getDay();
+      if (day === 6) return 'sat-tile';
+      if (day === 0) return 'sun-tile';
+    }
+    return null;
   };
 
-  const handleDeleteMap = async (mapId, e) => {
-    e.stopPropagation();
-    if (confirm('마인드맵 전체를 삭제하시겠습니까?')) {
-      await deleteDoc(doc(db, 'mindmaps', mapId));
+  // 한글 주석: 에디터 내부에서 수정된 노드 리스트 배열 데이터를 영구 반영 처리
+  const submitNodeData = async (e) => {
+    if (e) e.preventDefault();
+    if (!inputModal.text.trim() || !currentMindMap) return;
+
+    try {
+      const docRef = doc(db, 'mindmaps', currentMindMap.id);
+      if (inputModal.mode === 'add') {
+        const parentNode = currentMindMap.nodes.find(n => n.id === inputModal.nodeId);
+        const newId = `node_${Date.now()}`;
+        
+        // 구조 개편: 자식 노드들의 시작 위치를 부모 노드 기반 Y축 분산 가변 레이아웃 연산 주입
+        const sameParentChildren = currentMindMap.edges ? currentMindMap.edges.filter(edge => edge.source === inputModal.nodeId) : [];
+        const childCount = sameParentChildren.length;
+        const spacingY = 80;
+        
+        const newNode = {
+          id: newId,
+          text: inputModal.text,
+          x: (parentNode?.x || 200) + 240,
+          y: (parentNode?.y || 300) + ((childCount * spacingY) - ((childCount * spacingY) / 2))
+        };
+        const newEdge = { id: `e_${inputModal.nodeId}_${newId}`, source: inputModal.nodeId, target: newId };
+
+        await updateDoc(docRef, {
+          nodes: [...currentMindMap.nodes, newNode],
+          edges: [...(currentMindMap.edges || []), newEdge]
+        });
+      } else if (inputModal.mode === 'edit') {
+        const updated = currentMindMap.nodes.map(n => n.id === inputModal.nodeId ? { ...n, text: inputModal.text } : n);
+        await updateDoc(docRef, { nodes: updated });
+      }
+      setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' });
+    } catch (err) { console.error(err); }
+  };
+
+  const handleDeleteNode = async (nodeId) => {
+    if (nodeId === 'root') return alert('중심 블록은 삭제할 수 없습니다.');
+    if (!confirm('이 블록을 삭제하시겠습니까?')) return;
+    try {
+      const updatedNodes = currentMindMap.nodes.filter(n => n.id !== nodeId);
+      const updatedEdges = currentMindMap.edges.filter(e => e.source !== nodeId && e.target !== nodeId);
+      await updateDoc(doc(db, 'mindmaps', currentMindMap.id), { nodes: updatedNodes, edges: updatedEdges });
+    } catch (err) { console.error(err); }
+  };
+
+  const renderWidgetContent = (id) => {
+    switch (id) {
+      case 'clock':
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+            <div style={{ fontSize: '3.8rem', fontWeight: '700', fontFamily: 'monospace', color: '#ffffff' }}>
+              {hours}:{minutes}<span style={{ fontSize: '2.5rem', color: 'rgba(255,255,255,0.4)', marginLeft: '4px' }}>{seconds}</span>
+            </div>
+          </div>
+        );
+      case 'calendar':
+        return (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', width: '100%' }}>
+            <Calendar onChange={handleDateChange} value={selectedDate} calendarType="gregory" tileClassName={tileClassNameGetter} formatDay={(locale, date) => date.getDate().toString()} formatShortWeekday={(locale, date) => ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]} />
+          </div>
+        );
+      case 'mindmap':
+        return <MindMapWidget onSelectMap={(map) => { setCurrentMindMap(map); setIsMindMapOpen(true); }} />;
+      default: return null;
     }
   };
 
-  const handleNodeMouseDown = (e, node) => {
-    e.stopPropagation();
-    const targetNode = autoLayoutNodes.find(n => n.id === node.id) || node;
-    setDragState({
-      isDragging: true,
-      nodeId: node.id,
-      startX: e.clientX,
-      startY: e.clientY,
-      initialNodeX: targetNode.x,
-      initialNodeY: targetNode.y
-    });
-  };
-
-  // 한글 주석: 미정의 변수(startPos) 참조 에러 완벽 해결
-  const handleContainerMouseMove = (e) => {
-    if (!dragState.isDragging || !isEditorMode) return;
-    
-    const deltaX = e.clientX - dragState.startX;
-    const deltaY = e.clientY - dragState.startY;
-
-    const updatedNodes = currentMap.nodes.map(n => {
-      if (n.id === dragState.nodeId) {
-        return { ...n, x: dragState.initialNodeX + deltaX, y: dragState.initialNodeY + deltaY };
-      }
-      return n;
-    });
-
-    currentMap.nodes = updatedNodes;
-  };
-
-  const handleNodeMouseUp = async () => {
-    if (!dragState.isDragging) return;
-    const docRef = doc(db, 'mindmaps', currentMap.id);
-    await updateDoc(docRef, { nodes: currentMap.nodes });
-    setDragState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialNodeX: 0, initialNodeY: 0 });
-  };
-
-  if (!isEditorMode) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '10px', flexShrink: 0 }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#ff2d55' }}>CREATIVE</div>
-          <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#ffffff', marginTop: '2px' }}>🧠 마인드맵 위젯</div>
-        </div>
-        
-        <form onSubmit={handleCreateMap} style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexShrink: 0 }}>
-          <input 
-            type="text" 
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="새 마인드맵 제목"
-            style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '4px 8px', fontSize: '0.75rem', color: '#fff', outline: 'none' }}
-          />
-          <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '8px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}>생성</button>
-        </form>
-
-        <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {mindmaps.map((map) => (
-            <div 
-              key={map.id}
-              onClick={() => onSelectMap(map)}
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '10px', padding: '8px 12px', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-            >
-              <span style={{ color: '#ffffff', fontWeight: '500' }}>{map.title}</span>
-              <button onClick={(e) => handleDeleteMap(map.id, e)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: '0.75rem' }}>✕</button>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div 
-      ref={containerRef}
-      onMouseMove={handleContainerMouseMove}
-      onMouseUp={handleNodeMouseUp}
-      style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', cursor: dragState.isDragging ? 'grabbing' : 'default' }}
-    >
-      <svg style={{ position: 'absolute', top: 0, left: 0, width: '2000px', height: '2000px', pointerEvents: 'none', zIndex: 0 }}>
-        {currentMap.edges?.map((edge) => {
-          const sourceNode = autoLayoutNodes.find(n => n.id === edge.source);
-          const targetNode = autoLayoutNodes.find(n => n.id === edge.target);
-          if (!sourceNode || !targetNode) return null;
-
-          const sX = sourceNode.x + 160;
-          const sY = sourceNode.y + 20;
-          const tX = targetNode.x;
-          const tY = targetNode.y + 20;
-          const cpX1 = sX + 60;
-          const cpY1 = sY;
-          const cpX2 = tX - 60;
-          const cpY2 = tY;
-
-          return (
-            <path 
-              key={edge.id} 
-              d={`M ${sX} ${sY} C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${tX} ${tY}`} 
-              stroke="rgba(0, 122, 255, 0.5)" 
-              strokeWidth="2" 
-              fill="none" 
-            />
-          );
-        })}
-      </svg>
-
-      {autoLayoutNodes.map((node) => (
-        <div 
-          key={node.id}
-          onMouseDown={(e) => handleNodeMouseDown(e, node)}
-          style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px`, width: '160px', zIndex: 10, background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.85) 0%, rgba(0,64,128,0.9) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', border: node.id === 'root' ? '1px solid #007aff' : '1px solid rgba(255,255,255,0.15)', borderRadius: '14px', padding: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transform: dragState.nodeId === node.id ? 'scale(1.03)' : 'scale(1)', transition: dragState.nodeId === node.id ? 'none' : 'transform 0.1s ease', userSelect: 'none' }}
-        >
-          <span 
-            onDoubleClick={() => onEditNodeClick(node.id, node.text)}
-            style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ffffff', cursor: 'text', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '4px' }}
-          >
-            {node.text}
-          </span>
-          
-          <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
-            <button 
-              onClick={(e) => { e.stopPropagation(); onAddNodeClick(node.id); }} 
-              style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              +
-            </button>
-            {node.id !== 'root' && (
-              <button 
-                // 한글 주석: 상위 명칭과 바인딩 프로퍼티 통일화 적용으로 정의되지 않음(not defined) 크래시 해결
-                onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id); }} 
-                style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                -
-              </button>
-            )}
+    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
+        {widgetOrder.map((id) => (
+          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}>
+            {renderWidgetContent(id)}
+            <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
           </div>
+        ))}
+      </div>
+
+      {isMindMapOpen && currentMindMap && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '16px', marginBottom: '20px' }}>
+            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '600', color: '#007aff' }}>{currentMindMap.title} (마인드맵 편집기)</h2>
+            <button onClick={() => setIsMindMapOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 16px', borderRadius: '10px', cursor: 'pointer' }}>전체창 닫기</button>
+          </div>
+
+          <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', position: 'relative', overflow: 'hidden' }}>
+            <MindMapWidget 
+              isEditorMode={true} 
+              currentMap={currentMindMap} 
+              onAddNodeClick={(parentId) => setInputModal({ isOpen: true, nodeId: parentId, text: '', mode: 'add' })}
+              onEditNodeClick={(nodeId, text) => setInputModal({ isOpen: true, nodeId: nodeId, text: text, mode: 'edit' })}
+              onDeleteNodeClick={handleDeleteNode}
+            />
+          </div>
+
+          {inputModal.isOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <form onSubmit={submitNodeData} style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', color: '#fff' }}>
+                <h4 style={{ margin: '0 0 16px 0', fontSize: '1rem', color: '#007aff' }}>{inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}</h4>
+                <input type="text" value={inputModal.text} onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })} autoFocus style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: '#fff', outline: 'none', marginBottom: '16px' }} />
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>취소</button>
+                  <button type="submit" style={{ background: '#007aff', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>확인</button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
-      ))}
+      )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
+      <DashboardContent />
+    </GoogleOAuthProvider>
   );
 }
