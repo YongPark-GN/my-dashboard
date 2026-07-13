@@ -89,7 +89,7 @@ function DashboardContent({ userId, onLogout }) {
     return () => unsubscribeLayout();
   }, [userId]);
 
-  // 핵심 로직: 발급된 토큰과 선택된 캘린더 날짜를 기준으로 구글 공식 일정 API 데이터를 실시간 수집 및 파싱
+  // 핵심 로직: 구글 캘린더 데이터 인출 및 상세 에러 코드 추적 파이프라인
   useEffect(() => {
     if (!accessToken) return;
 
@@ -109,6 +109,13 @@ function DashboardContent({ userId, onLogout }) {
         
         const data = await response.json();
         
+        // 핵심 로직: API 응답이 에러 객체를 반환할 경우 콘솔 및 화면에 원인 노출
+        if (data.error) {
+          console.error("구글 캘린더 API 반환 에러 세부정보:", data.error);
+          alert(`캘린더 로드 실패: ${data.error.message} (코드: ${data.error.code})`);
+          return;
+        }
+        
         if (data.items) {
           const formattedEvents = data.items.map(item => ({
             id: item.id,
@@ -119,7 +126,7 @@ function DashboardContent({ userId, onLogout }) {
           setEvents(formattedEvents);
         }
       } catch (err) {
-        console.error("구글 캘린더 API 로드 장애 조치:", err);
+        console.error("네트워크 통신 장애 발생:", err);
       }
     };
 
@@ -181,12 +188,13 @@ function DashboardContent({ userId, onLogout }) {
     };
   }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes]);
 
+  // 핵심 로직: 팝업 기반 토큰 획득 체제로 원상 복귀 (COOP 경고로그는 데이터 차단 원인이 아님)
   const login = useGoogleLogin({
     onSuccess: (res) => { 
       setIsLoggedIn(true); 
       setAccessToken(res.access_token); 
     },
-    onError: (err) => console.error("구글 인증 장애 복구 핸들러:", err),
+    onError: (err) => console.error("구글 계정 연동 실패 정보:", err),
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
 
@@ -276,6 +284,7 @@ export default function App() {
     );
   }
 
+  // ⚠️ 중요: 아래 clientId 값이 새 파이어베이스 프로젝트(33bb6) 소유의 OAuth ID가 맞는지 콘솔에서 최종 대조하세요.
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
       <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
