@@ -10,26 +10,47 @@ const STAGES = [
 ];
 
 export default function WorkflowWidget() {
-  const [tasks, setTasks] = useState([]);
+  // 한글 주석: 초기 로딩 시 LocalStorage 백업본을 복구하여 끊김 현상 가동 차단
+  const [tasks, setTasks] = useState(() => {
+    const saved = localStorage.getItem('dashboard_tasks');
+    return saved ? JSON.parse(saved) : [
+      { id: 't1', title: '527mm Enclosure 구조해석 및 압력 검토', stage: 'simulation', progress: 75 },
+      { id: 't2', title: '10-BAY GIS 가스 계통도 CAD 도면 설계', stage: 'design', progress: 40 },
+      { id: 't3', title: 'M30 앵커 볼트 전단 강도 스펙 수립', stage: 'plan', progress: 10 }
+    ];
+  });
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
   useEffect(() => {
     if (!db) return;
     const unsubscribe = onSnapshot(doc(db, "dashboard", "taskData"), (docSnap) => {
-      if (docSnap.exists() && docSnap.data()?.list) setTasks(docSnap.data().list);
+      if (docSnap.exists() && docSnap.data()?.list) {
+        setTasks(docSnap.data().list);
+        localStorage.setItem('dashboard_tasks', JSON.stringify(docSnap.data().list));
+      }
     });
     return () => unsubscribe();
   }, []);
 
   const saveTasks = async (list) => {
-    await setDoc(doc(db, "dashboard", "taskData"), { list });
+    localStorage.setItem('dashboard_tasks', JSON.stringify(list));
+    try {
+      if (!db) return;
+      await setDoc(doc(db, "dashboard", "taskData"), { list });
+    } catch (err) { console.error("Firestore Task 저장 실패:", err); }
   };
 
   const moveTaskStage = (taskId, currentStage) => {
     const stageOrder = ['plan', 'design', 'simulation', 'done'];
     const nextIdx = stageOrder.indexOf(currentStage) + 1;
     if (nextIdx >= stageOrder.length) return;
-    const updated = tasks.map(t => t.id === taskId ? { ...t, stage: stageOrder[nextIdx], progress: nextIdx === 3 ? 100 : Math.min(90, t.progress + 25) } : t);
+    
+    const updated = tasks.map(t => t.id === taskId ? { 
+      ...t, 
+      stage: stageOrder[nextIdx], 
+      progress: nextIdx === 3 ? 100 : Math.min(90, t.progress + 25) 
+    } : t);
+    
     setTasks(updated);
     saveTasks(updated);
   };

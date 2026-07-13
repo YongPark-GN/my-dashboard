@@ -3,7 +3,7 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
-// 각 위젯 독립 컴포넌트 묶음 호출
+// 각 독립 컴포넌트 호출
 import ClockWidget from './components/ClockWidget';
 import WeatherWidget from './components/WeatherWidget';
 import WorkflowWidget from './components/WorkflowWidget';
@@ -42,7 +42,7 @@ const iosLiquidGlassWidget = {
   backdropFilter: 'blur(40px) saturate(200%)',
   borderRadius: '28px', padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)',
   boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)', color: '#ffffff', display: 'flex', flexDirection: 'column',
-  boxSizing: 'border-box', overflow: 'hidden', position: 'relative'
+  boxSizing: 'border-box', overflow: 'hidden', position: 'relative', cursor: 'grab'
 };
 
 function DashboardContent() {
@@ -55,16 +55,47 @@ function DashboardContent() {
   const [currentMindMap, setCurrentMindMap] = useState(null);
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add' });
 
-  const [widgetOrder] = useState(['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap']);
-  const [widgetSizes, setWidgetSizes] = useState({
-    clock: { width: 360, height: 260 }, weather: { width: 320, height: 260 },
-    workflow: { width: 664, height: 340 }, calendar: { width: 360, height: 260 },
-    scheduler: { width: 320, height: 260 }, mindmap: { width: 360, height: 260 }
+  // 코드 핵심 복구: LocalStorage 백업 데이터를 기본값으로 할당하여 안정성 극대화
+  const [widgetOrder, setWidgetOrder] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_order');
+    return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
   });
 
+  const [widgetSizes, setWidgetSizes] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_sizes');
+    return saved ? JSON.parse(saved) : {
+      clock: { width: 360, height: 260 }, weather: { width: 320, height: 260 },
+      workflow: { width: 664, height: 340 }, calendar: { width: 360, height: 260 },
+      scheduler: { width: 320, height: 260 }, mindmap: { width: 360, height: 260 }
+    };
+  });
+
+  const [draggingId, setDraggingId] = useState(null);
   const [resizeTarget, setResizeTarget] = useState(null);
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+
+  // 한글 주석: 위젯 드래그 배치 상태 정보를 Firestore 원격 서버와 완벽 연동
+  useEffect(() => {
+    try {
+      if (!db) return;
+      const layoutConfigRef = doc(db, "dashboard", "layoutConfig");
+      const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const remoteData = docSnap.data();
+          if (remoteData?.widgetOrder) {
+            setWidgetOrder(remoteData.widgetOrder);
+            localStorage.setItem('dashboard_widget_order', JSON.stringify(remoteData.widgetOrder));
+          }
+          if (remoteData?.widgetSizes) {
+            setWidgetSizes(remoteData.widgetSizes);
+            localStorage.setItem('dashboard_widget_sizes', JSON.stringify(remoteData.widgetSizes));
+          }
+        }
+      });
+      return () => unsubscribeLayout();
+    } catch (e) { console.error(e); }
+  }, []);
 
   useEffect(() => {
     if (!isMindMapOpen || !currentMindMap?.id) return;
@@ -73,6 +104,33 @@ function DashboardContent() {
     });
     return () => unsubscribe();
   }, [isMindMapOpen]);
+
+  const saveLayoutToFirestore = async (newOrder, newSizes) => {
+    localStorage.setItem('dashboard_widget_order', JSON.stringify(newOrder));
+    localStorage.setItem('dashboard_widget_sizes', JSON.stringify(newSizes));
+    try {
+      if (!db) return;
+      await setDoc(doc(db, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true });
+    } catch (err) { console.error(err); }
+  };
+
+  // 한글 주석: 위젯 이동(드래그앤드롭) 파이프라인 제어 엔진 활성화
+  const handleDragStart = (id) => { if (!resizeTarget) setDraggingId(id); };
+  const handleDragOver = (e) => { e.preventDefault(); };
+  const handleDrop = (targetId) => {
+    if (!draggingId || draggingId === targetId) return;
+    const currentOrder = [...widgetOrder];
+    const dragIdx = currentOrder.indexOf(draggingId);
+    const targetIdx = currentOrder.indexOf(targetId);
+    
+    currentOrder[dragIdx] = targetId;
+    currentOrder[targetIdx] = draggingId;
+    
+    setWidgetOrder(currentOrder);
+    setDraggingId(null);
+    saveLayoutToFirestore(currentOrder, widgetSizes); 
+  };
+  const handleDragEnd = () => { setDraggingId(null); };
 
   const initResize = (e, id) => {
     e.preventDefault(); e.stopPropagation();
@@ -84,12 +142,17 @@ function DashboardContent() {
   useEffect(() => {
     const doResize = (e) => {
       if (!resizeTarget) return;
-      setWidgetSizes(prev => ({
-        ...prev,
-        [resizeTarget]: { width: Math.max(260, startSize.width + (e.clientX - startPos.x)), height: Math.max(220, startSize.height + (e.clientY - startPos.y)) }
-      }));
+      const deltaX = e.clientX - startPos.x;
+      const deltaY = e.clientY - startPos.y;
+      setWidgetSizes(prev => {
+        const next = { ...prev, [resizeTarget]: { width: Math.max(260, startSize.width + deltaX), height: Math.max(220, startSize.height + deltaY) } };
+        return next;
+      });
     };
-    const stopResize = () => setResizeTarget(null);
+    const stopResize = () => {
+      if (resizeTarget) saveLayoutToFirestore(widgetOrder, widgetSizes);
+      setResizeTarget(null);
+    };
     if (resizeTarget) {
       window.addEventListener('mousemove', doResize);
       window.addEventListener('mouseup', stopResize);
@@ -98,7 +161,7 @@ function DashboardContent() {
       window.removeEventListener('mousemove', doResize);
       window.removeEventListener('mouseup', stopResize);
     };
-  }, [resizeTarget, startPos, startSize]);
+  }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes]);
 
   const login = useGoogleLogin({
     onSuccess: (res) => { setIsLoggedIn(true); setAccessToken(res.access_token); },
@@ -135,7 +198,6 @@ function DashboardContent() {
       case 'clock': return <ClockWidget />;
       case 'weather': return <WeatherWidget />;
       case 'workflow': return <WorkflowWidget />;
-      // 한글 주석: 핵심 해결 - formatDay 인자 구조의 'date' 오타 변수를 상속 이름인 'd'로 매핑 일치 처리 완료
       case 'calendar': return <Calendar onChange={setSelectedDate} value={selectedDate} calendarType="gregory" tileClassName={({ date, view }) => view === 'month' ? (date.getDay() === 6 ? 'sat-tile' : date.getDay() === 0 ? 'sun-tile' : null) : null} formatDay={(locale, d) => d.getDate().toString()} />;
       case 'scheduler': return <SchedulerWidget isLoggedIn={isLoggedIn} login={login} events={events} selectedDate={selectedDate} />;
       case 'mindmap': return <MindMapWidget onSelectMap={(map) => { setCurrentMindMap(map); setIsMindMapOpen(true); }} />;
@@ -147,7 +209,7 @@ function DashboardContent() {
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
         {widgetOrder.map((id) => (
-          <div key={id} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px` }}>
+          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}>
             {renderWidgetContent(id)}
             <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
           </div>
