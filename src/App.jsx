@@ -135,7 +135,8 @@ function DashboardContent() {
       case 'clock': return <ClockWidget />;
       case 'weather': return <WeatherWidget />;
       case 'workflow': return <WorkflowWidget />;
-      case 'calendar': return <Calendar onChange={setSelectedDate} value={selectedDate} calendarType="gregory" tileClassName={({ date, view }) => view === 'month' ? (date.getDay() === 6 ? 'sat-tile' : date.getDay() === 0 ? 'sun-tile' : null) : null} formatDay={(l, d) => date.getDate().toString()} />;
+      // 한글 주석: 핵심 해결 - formatDay 인자 구조의 'date' 오타 변수를 상속 이름인 'd'로 매핑 일치 처리 완료
+      case 'calendar': return <Calendar onChange={setSelectedDate} value={selectedDate} calendarType="gregory" tileClassName={({ date, view }) => view === 'month' ? (date.getDay() === 6 ? 'sat-tile' : date.getDay() === 0 ? 'sun-tile' : null) : null} formatDay={(locale, d) => d.getDate().toString()} />;
       case 'scheduler': return <SchedulerWidget isLoggedIn={isLoggedIn} login={login} events={events} selectedDate={selectedDate} />;
       case 'mindmap': return <MindMapWidget onSelectMap={(map) => { setCurrentMindMap(map); setIsMindMapOpen(true); }} />;
       default: return null;
