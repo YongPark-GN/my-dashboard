@@ -48,8 +48,22 @@ const iosLiquidGlassWidget = {
 function DashboardContent({ userId, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [accessToken, setAccessToken] = useState('');
+
+  // 핵심 로직: 새로고침 시 로컬 저장소에서 유효한 캘린더 토큰이 존재하면 자동으로 징검다리 로그인 상태 주입
+  const [accessToken, setAccessToken] = useState(() => {
+    const savedToken = localStorage.getItem(`cal_token_${userId}`);
+    const savedExpiry = localStorage.getItem(`cal_expiry_${userId}`);
+    if (savedToken && savedExpiry && Date.now() < Number(savedExpiry)) {
+      return savedToken;
+    }
+    return '';
+  });
+
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    const savedToken = localStorage.getItem(`cal_token_${userId}`);
+    const savedExpiry = localStorage.getItem(`cal_expiry_${userId}`);
+    return !!(savedToken && savedExpiry && Date.now() < Number(savedExpiry));
+  });
 
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState(null);
@@ -89,7 +103,6 @@ function DashboardContent({ userId, onLogout }) {
     return () => unsubscribeLayout();
   }, [userId]);
 
-  // 핵심 로직: 구글 캘린더 데이터 인출 및 상세 에러 코드 추적 파이프라인
   useEffect(() => {
     if (!accessToken) return;
 
@@ -109,10 +122,15 @@ function DashboardContent({ userId, onLogout }) {
         
         const data = await response.json();
         
-        // 핵심 로직: API 응답이 에러 객체를 반환할 경우 콘솔 및 화면에 원인 노출
         if (data.error) {
+          // 핵심 로직: 만약 캐싱된 토큰이 세션 에러를 반환하면 파괴하고 동기화 초기화 조치
+          if (data.error.code === 401) {
+            localStorage.removeItem(`cal_token_${userId}`);
+            localStorage.removeItem(`cal_expiry_${userId}`);
+            setIsLoggedIn(false);
+            setAccessToken('');
+          }
           console.error("구글 캘린더 API 반환 에러 세부정보:", data.error);
-          alert(`캘린더 로드 실패: ${data.error.message} (코드: ${data.error.code})`);
           return;
         }
         
@@ -131,7 +149,7 @@ function DashboardContent({ userId, onLogout }) {
     };
 
     fetchGoogleCalendarEvents();
-  }, [accessToken, selectedDate]);
+  }, [accessToken, selectedDate, userId]);
 
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
     if (!userId) return;
@@ -188,15 +206,25 @@ function DashboardContent({ userId, onLogout }) {
     };
   }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes]);
 
-  // 핵심 로직: 팝업 기반 토큰 획득 체제로 원상 복귀 (COOP 경고로그는 데이터 차단 원인이 아님)
+  // 핵심 로직: 로그인 가동 시 발급된 인증 토큰과 만료 타임스탬프를 보증값으로 로컬에 세이브
   const login = useGoogleLogin({
     onSuccess: (res) => { 
       setIsLoggedIn(true); 
       setAccessToken(res.access_token); 
+      const expiryTime = Date.now() + (res.expires_in || 3600) * 1000; // 대개 1시간(3600초) 유효 보증
+      localStorage.setItem(`cal_token_${userId}`, res.access_token);
+      localStorage.setItem(`cal_expiry_${userId}`, String(expiryTime));
     },
     onError: (err) => console.error("구글 계정 연동 실패 정보:", err),
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
+
+  // 핵심 로직: 시스템 전역 로그아웃 터치 시 브라우저 내부 캐시 토큰 세트까지 함께 증발 조치
+  const handleFullLogout = () => {
+    localStorage.removeItem(`cal_token_${userId}`);
+    localStorage.removeItem(`cal_expiry_${userId}`);
+    onLogout();
+  };
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -219,7 +247,7 @@ function DashboardContent({ userId, onLogout }) {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
-      <button onClick={onLogout} style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.8rem' }}>로그아웃</button>
+      <button onClick={handleFullLogout} style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.8rem' }}>로그아웃</button>
       
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start', marginTop: '40px' }}>
         {widgetOrder.map((id) => (
@@ -284,7 +312,6 @@ export default function App() {
     );
   }
 
-  // ⚠️ 중요: 아래 clientId 값이 새 파이어베이스 프로젝트(33bb6) 소유의 OAuth ID가 맞는지 콘솔에서 최종 대조하세요.
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
       <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
