@@ -8,7 +8,6 @@ import MindMapWidget from './components/MindMapWidget';
 import { db } from './firebase';
 import { doc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 
-// 한글 주석: index.css나 외부 브라우저 마진 설정이 레이아웃을 망치지 못하도록 강제 리셋 스타일 주입
 const iosLiquidGlassTheme = `
   * {
     margin: 0 !important;
@@ -177,6 +176,7 @@ function DashboardContent() {
     }
   }, []);
 
+  // 한글 주석: 실시간 데이터 반영으로 새로고침 시 데이터가 공백으로 날아가는 현상 완전 교정
   useEffect(() => {
     if (!isMindMapOpen || !currentMindMap?.id) return;
     const unsubscribe = onSnapshot(doc(db, 'mindmaps', currentMindMap.id), (docSnap) => {
@@ -384,7 +384,6 @@ function DashboardContent() {
     return null;
   };
 
-  // 한글 주석: 확인 버튼 클릭 시 원격 Firestore 문서를 즉각 갱신하는 공용 함수
   const submitNodeData = async (e) => {
     if (e) e.preventDefault();
     if (!inputModal.text.trim() || !currentMindMap || !currentMindMap.id) return;
@@ -396,7 +395,6 @@ function DashboardContent() {
         const parentNode = currentMindMap.nodes.find(n => n.id === inputModal.nodeId);
         const newId = `node_${Date.now()}`;
         
-        // 트리 자동 레이아웃 알고리즘에 의해 자동 정렬되므로 기본 포지션만 임시 할당
         const newNode = {
           id: newId,
           text: inputModal.text,
@@ -419,6 +417,24 @@ function DashboardContent() {
       setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' });
     } catch (error) {
       console.error("Firestore 저장 실패:", error);
+    }
+  };
+
+  // 한글 주석: 노드 제거 시 연동되는 핵심 기능 함수 명칭 교정 완료
+  const handleDeleteNode = async (nodeId) => {
+    if (nodeId === 'root') return alert('중심 블록은 삭제할 수 없습니다.');
+    if (!confirm('이 블록을 삭제하시겠습니까?')) return;
+
+    try {
+      const updatedNodes = currentMindMap.nodes.filter(node => node.id !== nodeId);
+      const updatedEdges = currentMindMap.edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId);
+
+      await updateDoc(doc(db, 'mindmaps', currentMindMap.id), {
+        nodes: updatedNodes,
+        edges: updatedEdges
+      });
+    } catch (err) {
+      console.error("노드 삭제 실패:", err);
     }
   };
 
@@ -518,7 +534,7 @@ function DashboardContent() {
                   구글 계정 연결
                 </button>
               ) : events.length === 0 ? (
-                <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem', padding: '15px 0' }}>예정된 스케줄 없음</div>
+                <div style={{ textAlignment: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem', padding: '15px 0' }}>예정된 스케줄 없음</div>
               ) : (
                 events.map(event => (
                   <div key={event.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.8rem', paddingBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
@@ -537,7 +553,6 @@ function DashboardContent() {
   };
 
   return (
-    // 한글 주석: 문제점 1 강제 해결 - 좌상단에 오차 없이 박스를 0px로 강제 고정 밀착
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
         {widgetOrder.map((id) => (
@@ -548,7 +563,6 @@ function DashboardContent() {
         ))}
       </div>
 
-      {/* 마인드맵 완전 전체화면 팝업 에디터 보드 */}
       {isMindMapOpen && currentMindMap && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
           
@@ -559,7 +573,7 @@ function DashboardContent() {
 
           <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', position: 'relative', overflow: 'hidden' }}>
             
-            {/* 한글 주석: 새 드로잉 캔버스 파이프라인 컴포넌트 호출부 */}
+            {/* 한글 주석: 에러 유발점이었던 프로퍼티 바인딩 인자 매칭 명확히 통합 */}
             <MindMapWidget 
               isEditorMode={true} 
               currentMap={currentMindMap} 

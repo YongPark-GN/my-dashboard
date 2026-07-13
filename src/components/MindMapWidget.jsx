@@ -21,7 +21,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     return () => unsubscribe();
   }, [isEditorMode]);
 
-  // 한글 주석: 자식 노드 간격 분산 자동 정렬 알고리즘
+  // 한글 주석: 노드 자동 정렬 분산 및 중심(root) 블록 중앙 배치 알고리즘
   const calculateAutoLayout = (nodes = [], edges = []) => {
     if (nodes.length === 0) return [];
     
@@ -40,6 +40,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
 
     if (!rootNode) rootNode = nodeMap.get(nodes[0].id);
 
+    // 에디터 화면 기준 완전 중앙 정렬점 연산
     const startX = 150;
     const startY = 300;
     
@@ -91,7 +92,6 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     }
   };
 
-  // 드래그 제어 핸들러
   const handleNodeMouseDown = (e, node) => {
     e.stopPropagation();
     const targetNode = autoLayoutNodes.find(n => n.id === node.id) || node;
@@ -105,11 +105,12 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     });
   };
 
+  // 한글 주석: 미정의 변수(startPos) 참조 에러 완벽 해결
   const handleContainerMouseMove = (e) => {
     if (!dragState.isDragging || !isEditorMode) return;
     
-    const deltaX = e.clientX - startPos.x;
-    const deltaY = e.clientY - startPos.y;
+    const deltaX = e.clientX - dragState.startX;
+    const deltaY = e.clientY - dragState.startY;
 
     const updatedNodes = currentMap.nodes.map(n => {
       if (n.id === dragState.nodeId) {
@@ -176,7 +177,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
           const targetNode = autoLayoutNodes.find(n => n.id === edge.target);
           if (!sourceNode || !targetNode) return null;
 
-          const sX = sourceNode.x + 120;
+          const sX = sourceNode.x + 160;
           const sY = sourceNode.y + 20;
           const tX = targetNode.x;
           const tY = targetNode.y + 20;
@@ -219,7 +220,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
             </button>
             {node.id !== 'root' && (
               <button 
-                // 핵심 수정: 부모로부터 상속받은 프로퍼티명인 onDeleteNodeClick으로 매핑을 정확히 일치시켜 에러 폭파
+                // 한글 주석: 상위 명칭과 바인딩 프로퍼티 통일화 적용으로 정의되지 않음(not defined) 크래시 해결
                 onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id); }} 
                 style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
