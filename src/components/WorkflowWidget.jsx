@@ -3,16 +3,12 @@ import { db } from '../firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 const STAGES = [
-  { id: 'plan', label: '기획' },
-  { id: 'design', label: '설계' },
-  { id: 'simulation', label: '해석' },
-  { id: 'done', label: '완료' }
+  { id: 'plan', label: '기획' }, { id: 'design', label: '설계' }, { id: 'simulation', label: '해석' }, { id: 'done', label: '완료' }
 ];
 
-export default function WorkflowWidget() {
-  // 한글 주석: 초기 로딩 시 LocalStorage 백업본을 복구하여 끊김 현상 가동 차단
+export default function WorkflowWidget({ userId }) {
   const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('dashboard_tasks');
+    const saved = localStorage.getItem(`tasks_${userId}`);
     return saved ? JSON.parse(saved) : [
       { id: 't1', title: '527mm Enclosure 구조해석 및 압력 검토', stage: 'simulation', progress: 75 },
       { id: 't2', title: '10-BAY GIS 가스 계통도 CAD 도면 설계', stage: 'design', progress: 40 },
@@ -22,21 +18,26 @@ export default function WorkflowWidget() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
   useEffect(() => {
-    if (!db) return;
-    const unsubscribe = onSnapshot(doc(db, "dashboard", "taskData"), (docSnap) => {
+    if (!db || !userId) return;
+    
+    // 핵심 로직: 로그아웃 또는 캘린더 연동 세션 전환 시 크래시를 유발하던 리스너 무제한 오류 차단 추가
+    const unsubscribe = onSnapshot(doc(db, "users", userId, "dashboard", "taskData"), (docSnap) => {
       if (docSnap.exists() && docSnap.data()?.list) {
         setTasks(docSnap.data().list);
-        localStorage.setItem('dashboard_tasks', JSON.stringify(docSnap.data().list));
+        localStorage.setItem(`tasks_${userId}`, JSON.stringify(docSnap.data().list));
       }
+    }, (err) => {
+      console.warn("워크플로우 스냅샷 토큰 유예 수신 가드 활성화:", err.message);
     });
     return () => unsubscribe();
-  }, []);
+  }, [userId]);
 
   const saveTasks = async (list) => {
-    localStorage.setItem('dashboard_tasks', JSON.stringify(list));
+    if (!userId) return;
+    localStorage.setItem(`tasks_${userId}`, JSON.stringify(list));
     try {
       if (!db) return;
-      await setDoc(doc(db, "dashboard", "taskData"), { list });
+      await setDoc(doc(db, "users", userId, "dashboard", "taskData"), { list });
     } catch (err) { console.error("Firestore Task 저장 실패:", err); }
   };
 
@@ -45,19 +46,14 @@ export default function WorkflowWidget() {
     const nextIdx = stageOrder.indexOf(currentStage) + 1;
     if (nextIdx >= stageOrder.length) return;
     
-    const updated = tasks.map(t => t.id === taskId ? { 
-      ...t, 
-      stage: stageOrder[nextIdx], 
-      progress: nextIdx === 3 ? 100 : Math.min(90, t.progress + 25) 
-    } : t);
-    
+    const updated = tasks.map(t => t.id === taskId ? { ...t, stage: stageOrder[nextIdx], progress: nextIdx === 3 ? 100 : Math.min(90, t.progress + 25) } : t);
     setTasks(updated);
     saveTasks(updated);
   };
 
   const addTask = (e) => {
     e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    if (!newTaskTitle.trim() || !userId) return;
     const updated = [...tasks, { id: 't_' + Date.now(), title: newTaskTitle, stage: 'plan', progress: 0 }];
     setTasks(updated);
     saveTasks(updated);

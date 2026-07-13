@@ -12,13 +12,15 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   
   const containerRef = useRef(null);
 
-  // 국문 주석: 렌더링 스코프 외부의 오염을 방지하기 위해 useEffect 내부에서만 동적으로 컬렉션 경로를 조립
   useEffect(() => {
     if (isEditorMode || !userId) return;
     
     const mindmapCollection = collection(db, 'users', userId, 'mindmaps');
+    // 핵심 로직: 토큰 재검증 단계의 동기화 튕김 에러 제어용 에러 콜백 결속
     const unsubscribe = onSnapshot(mindmapCollection, (snapshot) => {
       setMindmaps(snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+    }, (err) => {
+      console.warn("마인드맵 리스트 스냅샷 대기 유예:", err.message);
     });
     return () => unsubscribe();
   }, [isEditorMode, userId]);
@@ -27,12 +29,15 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     if (!isEditorMode || !selectedMapId || !userId) return;
     
     const docRef = doc(db, 'users', userId, 'mindmaps', selectedMapId);
+    // 핵심 로직: 내부 에디터 단일 인스턴스 스트리밍 트랜잭션 에러 가드 배치
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists() && !dragState.isDragging) {
         const rawData = docSnap.data();
         setEditorNodes(rawData.nodes || [{ id: 'root', text: rawData.title || "중심 노드", x: 150, y: 300 }]);
         setEditorEdges(rawData.edges || []);
       }
+    }, (err) => {
+      console.warn("마인드맵 에디터 세션 유예:", err.message);
     });
     return () => unsubscribe();
   }, [selectedMapId, isEditorMode, dragState.isDragging, userId]);

@@ -45,6 +45,7 @@ const iosLiquidGlassWidget = {
   boxSizing: 'border-box', overflow: 'hidden', position: 'relative', cursor: 'grab'
 };
 
+// 핵심 로직: 유저 ID 상태 지연을 방지하기 위해 App으로부터 userId를 명시적 프로퍼티로 상속
 function DashboardContent({ userId, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
@@ -77,12 +78,16 @@ function DashboardContent({ userId, onLogout }) {
   useEffect(() => {
     if (!db || !userId) return;
     const layoutConfigRef = doc(db, "users", userId, "dashboard", "layoutConfig");
+    
+    // 핵심 로직: 인증 유예 현상에 따른 예외 크래시 방지 핸들러(Error Callback) 추가
     const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
       if (docSnap.exists()) {
         const remoteData = docSnap.data();
         if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
         if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
       }
+    }, (err) => {
+      console.warn("세션 갱신 중 레이아웃 동기화 유예 복구:", err.message);
     });
     return () => unsubscribeLayout();
   }, [userId]);
@@ -233,10 +238,9 @@ export default function App() {
     );
   }
 
-  // 국문 주석: 자식 컴포넌트들에게 확정된 user.uid 값을 주입하도록 아키텍처 결속
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
-      <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
+      <DashboardContent userId={user.uid} />
     </GoogleOAuthProvider>
   );
 }
