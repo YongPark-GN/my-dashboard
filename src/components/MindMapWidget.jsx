@@ -7,8 +7,6 @@ export default function MindMapWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [currentMap, setCurrentMap] = useState(null);
   const [newTitle, setNewTitle] = useState('');
-
-  // 한글 주석: 문제점 4 해결 - 브라우저 프롬프트 창을 대체하는 맞춤형 모달 상태값 관리
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add' });
 
   const mindmapCollection = collection(db, 'mindmaps');
@@ -19,12 +17,12 @@ export default function MindMapWidget() {
       setMindmaps(maps);
       
       if (currentMap) {
-        const updated = maps.find(m => m.id === currentMap.id);
-        if (updated) setCurrentMap(updated);
+        const found = maps.find(m => m.id === currentMap.id);
+        if (found) setCurrentMap(found);
       }
     });
     return () => unsubscribe();
-  }, [isOpen]);
+  }, [isOpen, currentMap?.id]);
 
   const handleCreateMap = async (e) => {
     e.preventDefault();
@@ -41,33 +39,39 @@ export default function MindMapWidget() {
     setNewTitle('');
   };
 
-  // 한글 주석: 문제점 4 - 커스텀 위젯 팝업에서 입력을 완료했을 때 실시간 파이어베이스 노드 추가 연동 로직
-  const submitNodeData = async () => {
-    if (!inputModal.text.trim() || !currentMap) return;
+  const submitNodeData = async (e) => {
+    if (e) e.preventDefault();
+    if (!inputModal.text.trim() || !currentMap || !currentMap.id) return;
 
-    if (inputModal.mode === 'add') {
-      const parentNode = currentMap.nodes.find(n => n.id === inputModal.nodeId);
-      const newId = `node_${Date.now()}`;
-      const newNode = {
-        id: newId,
-        text: inputModal.text,
-        x: parentNode.x + 200,
-        y: parentNode.y + (Math.random() * 100 - 50)
-      };
-      const newEdge = { id: `e_${parentNode.id}_${newId}`, source: parentNode.id, target: newId };
+    try {
+      const docRef = doc(db, 'mindmaps', currentMap.id);
 
-      await updateDoc(doc(db, 'mindmaps', currentMap.id), {
-        nodes: [...currentMap.nodes, newNode],
-        edges: [...currentMap.edges, newEdge]
-      });
-    } else if (inputModal.mode === 'edit') {
-      const updatedNodes = currentMap.nodes.map(node => 
-        node.id === inputModal.nodeId ? { ...node, text: inputModal.text } : node
-      );
-      await updateDoc(doc(db, 'mindmaps', currentMap.id), { nodes: updatedNodes });
+      if (inputModal.mode === 'add') {
+        const parentNode = currentMap.nodes.find(n => n.id === inputModal.nodeId);
+        const newId = `node_${Date.now()}`;
+        const newNode = {
+          id: newId,
+          text: inputModal.text,
+          x: (parentNode?.x || 250) + 200,
+          y: (parentNode?.y || 150) + (Math.random() * 80 - 40)
+        };
+        const newEdge = { id: `e_${inputModal.nodeId}_${newId}`, source: inputModal.nodeId, target: newId };
+
+        const nextNodes = currentMap.nodes ? [...currentMap.nodes, newNode] : [newNode];
+        const nextEdges = currentMap.edges ? [...currentMap.edges, newEdge] : [newEdge];
+
+        await updateDoc(docRef, { nodes: nextNodes, edges: nextEdges });
+      } else if (inputModal.mode === 'edit') {
+        const updatedNodes = currentMap.nodes.map(node => 
+          node.id === inputModal.nodeId ? { ...node, text: inputModal.text } : node
+        );
+        await updateDoc(docRef, { nodes: updatedNodes });
+      }
+
+      setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' });
+    } catch (error) {
+      console.error("Firestore DB 반영 에러:", error);
     }
-
-    setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' });
   };
 
   const handleDeleteNode = async (nodeId) => {
@@ -123,9 +127,9 @@ export default function MindMapWidget() {
         ))}
       </div>
 
-      {/* 한글 주석: 문제점 1 해결 - 최상위 뷰포트 레이어 전체 화면 스케일링 강제 배치 */}
+      {/* 핵심 구현: 전체화면 모달 독립 구동 영역 */}
       {isOpen && currentMap && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '16px', marginBottom: '20px', flexShrink: 0 }}>
             <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '600', color: '#007aff' }}>{currentMap.title} (마인드맵 편집기)</h2>
@@ -165,11 +169,12 @@ export default function MindMapWidget() {
             ))}
           </div>
 
-          {/* 한글 주석: 문제점 4 해결 - 블록 추가(+) 클릭 시 노출되는 글래스모피즘 스타일의 커스텀 팝업 인풋 디자인 창 */}
           {inputModal.isOpen && (
-            <div style={{ position: 'fixed', inset: 0, zIndex: 100000, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)', color: '#fff' }}>
-                <h4 style={{ margin: '0 0 16px 0', fontSize: '1rem', fontMedium: '600', color: '#007aff' }}>{inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}</h4>
+            <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <form onSubmit={submitNodeData} style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)', color: '#fff' }}>
+                <h4 style={{ margin: '0 0 16px 0', fontSize: '1rem', fontWeight: '600', color: '#007aff' }}>
+                  {inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}
+                </h4>
                 <input 
                   type="text" 
                   value={inputModal.text} 
@@ -179,10 +184,10 @@ export default function MindMapWidget() {
                   style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', fontSize: '0.85rem', color: '#fff', outline: 'none', boxSizing: 'border-box', marginBottom: '16px' }}
                 />
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  <button onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>취소</button>
-                  <button onClick={submitNodeData} style={{ background: '#007aff', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>확인</button>
+                  <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>취소</button>
+                  <button type="submit" style={{ background: '#007aff', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>확인</button>
                 </div>
-              </div>
+              </form>
             </div>
           )}
 

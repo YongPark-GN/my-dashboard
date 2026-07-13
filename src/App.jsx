@@ -19,23 +19,17 @@ const iosLiquidGlassTheme = `
     width: 100vw;
     overflow-x: hidden;
   }
-  /* 캘린더 요일 밑줄 및 텍스트 데코레이션 제거 */
   .react-calendar { background: transparent !important; color: #ffffff !important; border: none !important; width: 100% !important; font-family: inherit; }
   .react-calendar abbr { text-decoration: none !important; border-bottom: none !important; cursor: default; }
   .react-calendar__navigation button { color: #ffffff !important; min-width: 30px; background: none; font-size: 13px; font-weight: 500; }
   .react-calendar__navigation button:enabled:hover { background-color: rgba(255,255,255,0.06); border-radius: 6px; }
   .react-calendar__month-view__weekdays { color: rgba(255,255,255,0.3) !important; text-transform: uppercase; font-weight: 600; font-size: 0.7rem; letter-spacing: 0.5px; padding-bottom: 8px; }
-  
-  /* 기본 타일 및 둥근 호버 효과 */
   .react-calendar__tile { color: #ffffff !important; background: none; border: none; padding: 10px 0; font-size: 0.85rem; position: relative; }
   .react-calendar__tile:enabled:hover { background-color: rgba(255,255,255,0.08) !important; border-radius: 12px; }
   .react-calendar__tile--now { background: rgba(255,255,255,0.15) !important; border-radius: 12px; font-weight: 600; }
   .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; }
   
-  /* 토요일 파란색, 일요일 빨간색 개별 일자 표기 스타일링 */
-  .react-calendar__month-view__days__day--weekend {
-    color: #ffffff !important;
-  }
+  /* 토요일 파란색, 일요일 빨간색 일자 표기 스타일 */
   .sat-tile { color: #30a9ff !important; }
   .sun-tile { color: #ff3b30 !important; }
 
@@ -361,7 +355,6 @@ function DashboardContent() {
 
   const todayText = new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' }).format(selectedDate);
 
-  // 한글 주석: 문제점 3 해결 - 토요일/일요일 타일 색상 주입 커스텀 클래스 매퍼 추가
   const tileClassNameGetter = ({ date, view }) => {
     if (view === 'month') {
       const day = date.getDay();
@@ -449,6 +442,8 @@ function DashboardContent() {
               value={selectedDate} 
               calendarType="gregory" 
               tileClassName={tileClassNameGetter}
+              // 핵심 수정: '1일', '2일' 문구 대신 순수 숫자('1', '2')만 반환하도록 슬라이싱 변경
+              formatDay={(locale, date) => date.getDate().toString()}
               formatShortWeekday={(locale, date) => ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]} 
             />
           </div>
@@ -485,9 +480,8 @@ function DashboardContent() {
   };
 
   return (
-    // 한글 주석: 문제점 1 해결 - 고정 가로폭 완전 해제 및 화면 100% 밀착 반응형 구현
-    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '32px', boxSizing: 'border-box', width: '100vw' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyItems: 'flex-start', alignItems: 'flex-start' }}>
         {widgetOrder.map((id) => (
           <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}>
             {renderWidgetContent(id)}
