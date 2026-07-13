@@ -89,6 +89,43 @@ function DashboardContent({ userId, onLogout }) {
     return () => unsubscribeLayout();
   }, [userId]);
 
+  // 핵심 로직: 발급된 토큰과 선택된 캘린더 날짜를 기준으로 구글 공식 일정 API 데이터를 실시간 수집 및 파싱
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const fetchGoogleCalendarEvents = async () => {
+      try {
+        const startOfDay = new Date(selectedDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        
+        const endOfDay = new Date(selectedDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${startOfDay.toISOString()}&timeMax=${endOfDay.toISOString()}&singleEvents=true&orderBy=startTime`;
+        
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        
+        const data = await response.json();
+        
+        if (data.items) {
+          const formattedEvents = data.items.map(item => ({
+            id: item.id,
+            title: item.summary || '제목 없음',
+            start: item.start.dateTime || item.start.date,
+            end: item.end.dateTime || item.end.date,
+          }));
+          setEvents(formattedEvents);
+        }
+      } catch (err) {
+        console.error("구글 캘린더 API 로드 장애 조치:", err);
+      }
+    };
+
+    fetchGoogleCalendarEvents();
+  }, [accessToken, selectedDate]);
+
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
     if (!userId) return;
     localStorage.setItem(`order_${userId}`, JSON.stringify(newOrder));
@@ -144,14 +181,12 @@ function DashboardContent({ userId, onLogout }) {
     };
   }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes]);
 
-  // 핵심 로직: 브라우저 COOP 보안 차단막을 우회하기 위해 캘린더 구글 인증 모드를 리디렉션 체제로 전면 전환
   const login = useGoogleLogin({
-    uxMode: 'redirect',
     onSuccess: (res) => { 
       setIsLoggedIn(true); 
       setAccessToken(res.access_token); 
     },
-    onError: (err) => console.error("구글 캘린더 연동 실패 가드:", err),
+    onError: (err) => console.error("구글 인증 장애 복구 핸들러:", err),
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
 
@@ -243,7 +278,7 @@ export default function App() {
 
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
-      <DashboardContent userId={user.uid} />
+      <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
     </GoogleOAuthProvider>
   );
 }
