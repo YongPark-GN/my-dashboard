@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
@@ -11,7 +11,8 @@ import SchedulerWidget from './components/SchedulerWidget';
 import MindMapWidget from './components/MindMapWidget';
 
 import { db } from './firebase';
-import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { useEffect } from 'react';
 
 const iosLiquidGlassTheme = `
   * { margin: 0 !important; box-sizing: border-box !important; }
@@ -53,7 +54,9 @@ function DashboardContent() {
 
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState(null);
-  const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', currentNodes: [], currentEdges: [] });
+  
+  // 국문 주석: App.jsx는 UI 중개 역할만 수행하도록 로직 위임 구조 고도화
+  const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
 
   const [widgetOrder, setWidgetOrder] = useState(() => {
     const saved = localStorage.getItem('dashboard_widget_order');
@@ -98,8 +101,6 @@ function DashboardContent() {
 
   const handleDragStart = (id) => { if (!resizeTarget) setDraggingId(id); };
   const handleDragOver = (e) => { e.preventDefault(); };
-  
-  // 국문 주석: 이벤트 바인딩 오류 방지를 위한 정밀 핸들러 고정 선언
   const handleDragEnd = () => { setDraggingId(null); };
 
   const handleDrop = (targetId) => {
@@ -148,48 +149,13 @@ function DashboardContent() {
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
 
-  const submitNodeData = async (e) => {
-    if (e) e.preventDefault();
-    if (!inputModal.text.trim() || !selectedMapId) return;
-
-    try {
-      const docRef = doc(db, 'mindmaps', selectedMapId);
-      const safeNodes = inputModal.currentNodes.length > 0 ? inputModal.currentNodes : [{ id: 'root', text: "중심 노드", x: 150, y: 300 }];
-      const safeEdges = inputModal.currentEdges || [];
-
-      if (inputModal.mode === 'add') {
-        const parentNode = safeNodes.find(n => n.id === inputModal.nodeId);
-        const newId = `node_${Date.now()}`;
-        const childCount = safeEdges.filter(edge => edge.source === inputModal.nodeId).length;
-        const offsetMultiplier = childCount % 2 === 0 ? 1 : -1;
-        
-        const newNode = {
-          id: newId,
-          text: inputModal.text,
-          x: (parentNode?.x || 150) + 240,
-          y: (parentNode?.y || 300) + (Math.ceil(childCount / 2) * 80 * offsetMultiplier)
-        };
-        const newEdge = { id: `e_${inputModal.nodeId}_${newId}`, source: inputModal.nodeId, target: newId };
-
-        await updateDoc(docRef, {
-          nodes: [...safeNodes, newNode],
-          edges: [...safeEdges, newEdge]
-        });
-      } else if (inputModal.mode === 'edit') {
-        const updated = safeNodes.map(n => n.id === inputModal.nodeId ? { ...n, text: inputModal.text } : n);
-        await updateDoc(docRef, { nodes: updated });
-      }
-      setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', currentNodes: [], currentEdges: [] });
-    } catch (err) { console.error(err); }
-  };
-
-  const handleDeleteNode = async (nodeId, currentNodes, currentEdges) => {
-    if (nodeId === 'root') return alert('중심 블록 금지');
-    if (!confirm('삭제?')) return;
-    await updateDoc(doc(db, 'mindmaps', selectedMapId), { 
-      nodes: currentNodes.filter(n => n.id !== nodeId), 
-      edges: currentEdges.filter(e => e.source !== nodeId && e.target !== nodeId) 
-    });
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    if (!inputModal.text.trim()) return;
+    if (inputModal.onSubmit) {
+      inputModal.onSubmit(inputModal.text);
+    }
+    setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
   };
 
   const renderWidgetContent = (id) => {
@@ -215,7 +181,7 @@ function DashboardContent() {
             onDragOver={handleDragOver} 
             onDrop={() => handleDrop(id)} 
             onDragEnd={handleDragEnd} 
-            style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}
+            style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}
           >
             {renderWidgetContent(id)}
             <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
@@ -233,9 +199,7 @@ function DashboardContent() {
             <MindMapWidget 
               isEditorMode={true} 
               selectedMapId={selectedMapId} 
-              onAddNodeClick={(parentId, currentNodes, currentEdges) => setInputModal({ isOpen: true, nodeId: parentId, text: '', mode: 'add', currentNodes, currentEdges })} 
-              onEditNodeClick={(nodeId, text, currentNodes) => setInputModal({ isOpen: true, nodeId: nodeId, text: text, mode: 'edit', currentNodes, currentEdges: [] })} 
-              onDeleteNodeClick={handleDeleteNode} 
+              openModal={(config) => setInputModal({ isOpen: true, ...config })}
             />
           </div>
         </div>
@@ -243,11 +207,11 @@ function DashboardContent() {
 
       {inputModal.isOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <form onSubmit={submitNodeData} style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', color: '#fff' }}>
+          <form onSubmit={handleFormSubmit} style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', color: '#fff' }}>
             <h4 style={{ margin: '0 0 16px 0', fontSize: '1rem', color: '#007aff' }}>{inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}</h4>
             <input type="text" value={inputModal.text} onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })} autoFocus style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: '#fff', outline: 'none', marginBottom: '16px' }} />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', currentNodes: [], currentEdges: [] })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>취소</button>
+              <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>취소</button>
               <button type="submit" style={{ background: '#007aff', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>확인</button>
             </div>
           </form>

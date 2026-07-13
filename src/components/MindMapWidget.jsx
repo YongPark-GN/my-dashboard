@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase'; 
 import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
 
-export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId, onAddNodeClick, onEditNodeClick, onDeleteNodeClick }) {
+export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId, openModal }) {
   const [mindmaps, setMindmaps] = useState([]);
   const [newTitle, setNewTitle] = useState('');
   
@@ -13,7 +13,6 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId
   const containerRef = useRef(null);
   const mindmapCollection = collection(db, 'mindmaps');
 
-  // 대시보드 메인 위젯 리스트 전용 리스너
   useEffect(() => {
     if (isEditorMode) return;
     const unsubscribe = onSnapshot(mindmapCollection, (snapshot) => {
@@ -22,7 +21,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId
     return () => unsubscribe();
   }, [isEditorMode]);
 
-  // 코드 핵심 logic: 에디터 팝업 가동 시 독립적 리스너가 독점 스트리밍 제어 (Race Condition 및 데이터 휘발 차단 마감)
+  // 국문 주석: 에디터 켜질 때 독점적 데이터 공급 및 결크 방어막
   useEffect(() => {
     if (!isEditorMode || !selectedMapId) return;
     
@@ -43,7 +42,16 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId
     setNewTitle('');
   };
 
-  const getAnchorPoints = (x, y, width = 160, height = 40) => {
+  // 국문 주석: 자동 줄바꿈 및 크기 가변화에 따른 동적 중심축 앵커 계산 로직 개편
+  const getAnchorPoints = (nodeId) => {
+    const el = document.getElementById(`mm-node-${nodeId}`);
+    const width = el ? el.offsetWidth : 160;
+    const height = el ? el.offsetHeight : 40;
+    
+    const node = editorNodes.find(n => n.id === nodeId);
+    const x = node ? node.x || 0 : 0;
+    const y = node ? node.y || 0 : 0;
+
     return {
       top: { x: x + width / 2, y: y },
       bottom: { x: x + width / 2, y: y + height },
@@ -53,11 +61,8 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId
   };
 
   const getBestAnchors = (srcNode, tgtNode) => {
-    const sNode = editorNodes.find(n => n.id === srcNode.id) || srcNode;
-    const tNode = editorNodes.find(n => n.id === tgtNode.id) || tgtNode;
-
-    const srcAnchors = getAnchorPoints(sNode.x || 0, sNode.y || 0);
-    const tgtAnchors = getAnchorPoints(tNode.x || 0, tNode.y || 0);
+    const srcAnchors = getAnchorPoints(srcNode.id);
+    const tgtAnchors = getAnchorPoints(tgtNode.id);
 
     let minDistance = Infinity;
     let bestSrc = srcAnchors.right;
@@ -107,12 +112,61 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId
   const handleNodeMouseUp = async () => {
     if (!dragState.isDragging) return;
     
-    const targetId = dragState.nodeId;
+    const currentNodesSnapshot = [...editorNodes];
     setDragState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
     try {
-      await updateDoc(doc(db, 'mindmaps', selectedMapId), { nodes: editorNodes });
-    } catch (err) { console.error(err); }
+      await updateDoc(doc(db, 'mindmaps', selectedMapId), { nodes: currentNodesSnapshot });
+    } catch (err) { console.error("드래그 저장 실패 복구:", err); }
+  };
+
+  // 국문 주석: 모든 Write 연산을 한 곳으로 모아 데이터 휘발을 차단한 내부 비즈니스 함수군
+  const internalAddNode = (parentId) => {
+    openModal({
+      mode: 'add',
+      text: '',
+      nodeId: parentId,
+      onSubmit: async (text) => {
+        const parentNode = editorNodes.find(n => n.id === parentId);
+        const newId = `node_${Date.now()}`;
+        const childCount = editorEdges.filter(edge => edge.source === parentId).length;
+        const offsetMultiplier = childCount % 2 === 0 ? 1 : -1;
+
+        const newNode = {
+          id: newId,
+          text: text,
+          x: (parentNode?.x || 150) + 240,
+          y: (parentNode?.y || 300) + (Math.ceil(childCount / 2) * 85 * offsetMultiplier)
+        };
+        const newEdge = { id: `e_${parentId}_${newId}`, source: parentId, target: newId };
+        
+        await updateDoc(doc(db, 'mindmaps', selectedMapId), {
+          nodes: [...editorNodes, newNode],
+          edges: [...editorEdges, newEdge]
+        });
+      }
+    });
+  };
+
+  const internalEditNode = (nodeId, oldText) => {
+    openModal({
+      mode: 'edit',
+      text: oldText,
+      nodeId: nodeId,
+      onSubmit: async (text) => {
+        const updated = editorNodes.map(n => n.id === nodeId ? { ...n, text } : n);
+        await updateDoc(doc(db, 'mindmaps', selectedMapId), { nodes: updated });
+      }
+    });
+  };
+
+  const internalDeleteNode = async (nodeId) => {
+    if (nodeId === 'root') return alert('중심 블록 금지');
+    if (!confirm('삭제?')) return;
+    await updateDoc(doc(db, 'mindmaps', selectedMapId), { 
+      nodes: editorNodes.filter(n => n.id !== nodeId), 
+      edges: editorEdges.filter(e => e.source !== nodeId && e.target !== nodeId) 
+    });
   };
 
   if (!isEditorMode) {
@@ -170,23 +224,49 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, selectedMapId
         return (
           <div 
             key={node.id} 
+            id={`mm-node-${node.id}`}
             onMouseDown={(e) => handleNodeMouseDown(e, node)}
             style={{ 
               position: 'absolute', 
               left: `${node.x || 0}px`, 
               top: `${node.y || 0}px`, 
-              width: '160px', 
+              // 국문 주석: 내용 길이에 따라 유동적으로 상자가 늘어나는 자동 줄바꿈 픽셀 반응형 스타일 기틀 수립
+              minWidth: '160px',
+              maxWidth: '300px',
+              width: 'auto',
+              height: 'auto',
               zIndex: isSelected ? 100 : 10, 
               background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', 
               border: isSelected ? '1.5px solid #007aff' : node.id === 'root' ? '1.5px solid rgba(0,122,255,0.5)' : '1px solid rgba(255,255,255,0.18)', 
               boxShadow: isSelected ? '0 0 15px rgba(0, 122, 255, 0.8), 0 8px 24px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.5)',
-              borderRadius: '14px', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none', cursor: dragState.isDragging ? 'grabbing' : 'grab'
+              borderRadius: '14px', 
+              padding: '12px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              gap: '8px',
+              userSelect: 'none', 
+              cursor: dragState.isDragging ? 'grabbing' : 'grab'
             }}
           >
-            <span onDoubleClick={() => onEditNodeClick(node.id, node.text, editorNodes)} style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '4px', cursor: 'text' }}>{node.text}</span>
-            <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
-              <button onClick={(e) => { e.stopPropagation(); onAddNodeClick(node.id, editorNodes, editorEdges); }} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
-              {node.id !== 'root' && <button onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id, editorNodes, editorEdges); }} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
+            <span 
+              onDoubleClick={() => internalEditNode(node.id, node.text)} 
+              style={{ 
+                fontSize: '0.8rem', 
+                fontWeight: '600', 
+                color: '#ffffff', 
+                // 국문 주석: 한 줄 자름(Ellipsis) 속성을 제거하고 멀티라인 유연 단어 분산 배치 주입
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                flex: 1, 
+                cursor: 'text' 
+              }}
+            >
+              {node.text}
+            </span>
+            <div style={{ display: 'flex', gap: '4px', flexShrink: 0, alignItems: 'center' }}>
+              <button onClick={() => internalAddNode(node.id)} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
+              {node.id !== 'root' && <button onClick={() => internalDeleteNode(node.id)} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
             </div>
           </div>
         );
