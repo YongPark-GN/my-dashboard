@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase'; // 핵심 로직: 이전 턴에서 셋업한 Firestore 인스턴스 바인딩
+import { db } from '../firebase'; // 핵심 로직: Firestore 인스턴스 바인딩
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 export default function MindMapWidget() {
@@ -10,22 +10,24 @@ export default function MindMapWidget() {
 
   const mindmapCollection = collection(db, 'mindmaps');
 
-  // 한글 주석: 데이터베이스에 등록된 마인드맵 목록을 실시간 리스닝하여 동기화
+  // 한글 주석: 데이터베이스 전체 목록 및 선택된 마인드맵의 내부 노드 상태까지 실시간 리스닝하여 리렌더링 트리거
   useEffect(() => {
     const unsubscribe = onSnapshot(mindmapCollection, (snapshot) => {
       const maps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setMindmaps(maps);
       
-      // 팝업이 열려있는 경우 갱신된 실시간 데이터를 현재 맵에 재매핑
+      // 핵심 수정: 팝업이 열려있을 때 Firestore 원격 서버의 최신 노드/선 변경점 데이터를 동기화
       if (currentMap) {
         const updated = maps.find(m => m.id === currentMap.id);
-        if (updated) setCurrentMap(updated);
+        if (updated) {
+          setCurrentMap(updated);
+        }
       }
     });
     return () => unsubscribe();
-  }, [currentMap?.id]);
+  }, [isOpen]); // 팝업 열림 상태가 바뀔 때도 리너서를 동기화 유지
 
-  // 한글 주석: 새로운 마인드맵 목록을 추가하고 최초 중심 블록을 함께 생성하는 로직
+  // 새로운 마인드맵 문서 생성 (최초 1회 데이터베이스 적재)
   const handleCreateMap = async (e) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -34,7 +36,7 @@ export default function MindMapWidget() {
       title: newTitle,
       createdAt: new Date().toISOString(),
       nodes: [
-        { id: 'root', text: newTitle, x: 350, y: 200 } // 스케치 디자인 기반: 최초 중심 블록 좌표 설정
+        { id: 'root', text: newTitle, x: 250, y: 150 }
       ],
       edges: []
     };
@@ -43,15 +45,16 @@ export default function MindMapWidget() {
     setNewTitle('');
   };
 
-  // 한글 주석: 손그림 아이디어의 [+] 버튼 클릭 시 새로운 서브 블록(자식 노드)을 생성 및 연결하는 로직
+  // 한글 주석: [+] 버튼 클릭 시 새 노드를 생성하고 Firestore 서버에 즉시 영구 저장(새로고침해도 보존)
   const handleAddNode = async (parentNode) => {
+    if (!currentMap || !currentMap.id) return;
+
     const newId = `node_${Date.now()}`;
-    // 부모 블록 위치 기준으로 간격을 두고 우측 또는 아래쪽에 배치 생성
     const newNode = {
       id: newId,
-      text: '새 블록',
+      text: '새 서브 블록',
       x: parentNode.x + 180,
-      y: parentNode.y + (Math.random() * 100 - 50)
+      y: parentNode.y + (Math.random() * 80 - 40)
     };
     
     const newEdge = {
@@ -60,16 +63,18 @@ export default function MindMapWidget() {
       target: newId
     };
 
-    const updatedNodes = [...currentMap.nodes, newNode];
-    const updatedEdges = [...currentMap.edges, newEdge];
+    const updatedNodes = currentMap.nodes ? [...currentMap.nodes, newNode] : [newNode];
+    const updatedEdges = currentMap.edges ? [...currentMap.edges, newEdge] : [newEdge];
 
-    await updateDoc(doc(db, 'mindmaps', currentMap.id), {
+    // 핵심 로직: 로컬 state 변경에 그치지 않고 Firestore 서버 문서를 직접 갱신
+    const docRef = doc(db, 'mindmaps', currentMap.id);
+    await updateDoc(docRef, {
       nodes: updatedNodes,
       edges: updatedEdges
     });
   };
 
-  // 한글 주석: 특정 블록의 내용을 사용자가 수정하거나 더블클릭할 때 업데이트하는 로직
+  // 블록 내용 더블클릭 수정 후 DB 반영
   const handleUpdateNodeText = async (nodeId, currentText) => {
     const promptText = prompt('블록 내용을 입력하세요:', currentText);
     if (promptText === null) return;
@@ -81,7 +86,7 @@ export default function MindMapWidget() {
     await updateDoc(doc(db, 'mindmaps', currentMap.id), { nodes: updatedNodes });
   };
 
-  // 한글 주석: 선택한 서브 블록 및 연결선을 마인드맵에서 안전하게 삭제하는 로직
+  // 서브 노드 삭제 후 DB 반영
   const handleDeleteNode = async (nodeId) => {
     if (nodeId === 'root') return alert('중심 블록은 삭제할 수 없습니다.');
     if (!confirm('이 블록을 삭제하시겠습니까?')) return;
@@ -95,7 +100,7 @@ export default function MindMapWidget() {
     });
   };
 
-  // 마인드맵 전체 삭제
+  // 전체 마인드맵 삭제
   const handleDeleteMap = async (mapId, e) => {
     e.stopPropagation();
     if (confirm('마인드맵 전체를 삭제하시겠습니까?')) {
@@ -106,93 +111,86 @@ export default function MindMapWidget() {
   };
 
   return (
-    <div className="p-4 bg-slate-800 rounded-xl text-white max-w-md shadow-lg">
-      <h3 className="text-lg font-bold mb-4 flex items-center gap-2">🧠 마인드맵 위젯</h3>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+      <div style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '10px', flexShrink: 0 }}>
+        <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#ff2d55' }}>CREATIVE</div>
+        <div style={{ fontSize: '1.1rem', fontWeight: '600', color: '#ffffff', marginTop: '2px' }}>🧠 마인드맵 위젯</div>
+      </div>
       
-      {/* 마인드맵 추가 폼 */}
-      <form onSubmit={handleCreateMap} className="flex gap-2 mb-4">
+      <form onSubmit={handleCreateMap} style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexShrink: 0 }}>
         <input 
           type="text" 
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
-          placeholder="새 마인드맵 제목 입력"
-          className="flex-1 px-3 py-1.5 bg-slate-700 rounded-lg text-sm border border-slate-600 focus:outline-none focus:border-indigo-500"
+          placeholder="새 마인드맵 제목"
+          style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '4px 8px', fontSize: '0.75rem', color: '#fff', outline: 'none' }}
         />
-        <button type="submit" className="px-3 py-1.5 bg-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-500">생성</button>
+        <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '8px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}>생성</button>
       </form>
 
-      {/* 스케치 반영 - 위젯 상태: 등록된 제목 격자 배열 뷰 */}
-      <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-        {mindmaps.map((map) => (
-          <div 
-            key={map.id}
-            onClick={() => { setCurrentMap(map); setIsOpen(true); }}
-            className="p-3 bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-600 transition flex justify-between items-center text-sm font-medium"
-          >
-            <span className="truncate">{map.title}</span>
-            <button onClick={(e) => handleDeleteMap(map.id, e)} className="text-slate-400 hover:text-red-400 text-xs">✕</button>
-          </div>
-        ))}
+      <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {mindmaps.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem', padding: '15px 0', margin: 'auto' }}>생성된 마인드맵이 없습니다.</div>
+        ) : (
+          mindmaps.map((map) => (
+            <div 
+              key={map.id}
+              onClick={() => { setCurrentMap(map); setIsOpen(true); }}
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '10px', padding: '8px 12px', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+            >
+              <span style={{ color: '#ffffff', fontWeight: '500' }}>{map.title}</span>
+              <button onClick={(e) => handleDeleteMap(map.id, e)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: '0.75rem' }}>✕</button>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* 스케치 반영 - 제목 클릭 시 전체창으로 팝업 (모달 인터페이스) */}
       {isOpen && currentMap && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="w-full h-full bg-slate-900 rounded-2xl p-6 flex flex-col">
-            
-            {/* 상단 바 */}
-            <div className="flex justify-between items-center border-b border-slate-700 pb-4 mb-4">
-              <h2 className="text-xl font-bold text-indigo-400">{currentMap.title} (편집기)</h2>
-              <button onClick={() => setIsOpen(false)} className="px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600">전체창 닫기</button>
-            </div>
-
-            {/* 마인드맵 시각화 캔버스 (HTML 절대 좌표 매핑) */}
-            <div className="flex-1 bg-slate-950 rounded-xl relative overflow-auto border border-slate-800">
-              
-              {/* 노드(블록) 렌더링 */}
-              {currentMap.nodes?.map((node) => (
-                <div 
-                  key={node.id}
-                  style={{ left: `${node.x}px`, top: `${node.y}px` }}
-                  className="absolute p-3 bg-slate-800 border-2 border-indigo-500 rounded-lg shadow-xl flex items-center gap-2 whitespace-nowrap group select-none"
-                >
-                  <span 
-                    onDoubleClick={() => handleUpdateNodeText(node.id, node.text)}
-                    className="cursor-pointer text-sm font-semibold"
-                    title="더블클릭하여 내용 수정"
-                  >
-                    {node.text}
-                  </span>
-                  
-                  {/* 기능 작동 버튼 컨트롤 셋 */}
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
-                    <button 
-                      onClick={() => handleAddNode(node)} 
-                      className="w-5 h-5 bg-green-600 rounded flex items-center justify-center text-xs font-bold hover:bg-green-500"
-                      title="새로운 블록 생성 및 연결"
-                    >
-                      +
-                    </button>
-                    {node.id !== 'root' && (
-                      <button 
-                        onClick={() => handleDeleteNode(node.id)} 
-                        className="w-5 h-5 bg-red-600 rounded flex items-center justify-center text-xs hover:bg-red-500"
-                        title="블록 삭제"
-                      >
-                        -
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {/* 임시 안내 레이블 */}
-              <div className="absolute bottom-4 left-4 text-xs text-slate-500 pointer-events-none">
-                💡 각 블록을 [더블클릭]하여 수정할 수 있으며, [+] 버튼으로 서브 단계를 생성합니다.
-              </div>
-            </div>
-
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', display: 'flex', flexDirection: 'column', padding: '40px', boxSizing: 'border-box' }}>
+          
+          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '16px', marginBottom: '20px', flexShrink: 0 }}>
+            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '600', color: '#007aff' }}>{currentMap.title} (마인드맵 편집기)</h2>
+            <button onClick={() => setIsOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 16px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}>전체창 닫기</button>
           </div>
+
+          <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', position: 'relative', overflow: 'auto' }}>
+            
+            {currentMap.nodes?.map((node) => (
+              <div 
+                key={node.id}
+                style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px`, background: 'linear-gradient(135deg, rgba(40,40,44,0.85) 0%, rgba(28,28,30,0.9) 100%)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '12px', padding: '10px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
+              >
+                <span 
+                  onDoubleClick={() => handleUpdateNodeText(node.id, node.text)}
+                  style={{ fontSize: '0.85rem', fontWeight: '600', color: '#ffffff', cursor: 'pointer' }}
+                >
+                  {node.text}
+                </span>
+                
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button 
+                    onClick={() => handleAddNode(node)} 
+                    style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    +
+                  </button>
+                  {node.id !== 'root' && (
+                    <button 
+                      onClick={() => handleDeleteNode(node.id)} 
+                      style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      -
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            <div style={{ position: 'absolute', bottom: '20px', left: '20px', fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>
+              💡 각 노드를 [더블클릭] 시 텍스트 수정이 가능합니다.
+            </div>
+          </div>
+
         </div>
       )}
     </div>
