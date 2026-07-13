@@ -45,7 +45,6 @@ const iosLiquidGlassWidget = {
   boxSizing: 'border-box', overflow: 'hidden', position: 'relative', cursor: 'grab'
 };
 
-// 핵심 로직: 유저 ID 상태 지연을 방지하기 위해 App으로부터 userId를 명시적 프로퍼티로 상속
 function DashboardContent({ userId, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
@@ -78,8 +77,6 @@ function DashboardContent({ userId, onLogout }) {
   useEffect(() => {
     if (!db || !userId) return;
     const layoutConfigRef = doc(db, "users", userId, "dashboard", "layoutConfig");
-    
-    // 핵심 로직: 인증 유예 현상에 따른 예외 크래시 방지 핸들러(Error Callback) 추가
     const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
       if (docSnap.exists()) {
         const remoteData = docSnap.data();
@@ -147,8 +144,14 @@ function DashboardContent({ userId, onLogout }) {
     };
   }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes]);
 
+  // 핵심 로직: 브라우저 COOP 보안 차단막을 우회하기 위해 캘린더 구글 인증 모드를 리디렉션 체제로 전면 전환
   const login = useGoogleLogin({
-    onSuccess: (res) => { setIsLoggedIn(true); setAccessToken(res.access_token); },
+    uxMode: 'redirect',
+    onSuccess: (res) => { 
+      setIsLoggedIn(true); 
+      setAccessToken(res.access_token); 
+    },
+    onError: (err) => console.error("구글 캘린더 연동 실패 가드:", err),
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
 
