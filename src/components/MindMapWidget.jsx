@@ -6,8 +6,10 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
   const [mindmaps, setMindmaps] = useState([]);
   const [newTitle, setNewTitle] = useState('');
   
-  // 드래그 제어 정밀 변수 매핑
-  const [dragInfo, setDragInfo] = useState({ isDragging: false, nodeId: null, offsetX: 0, offsetY: 0 });
+  // 국문 주석: 드래그 상태 머신 및 로컬 실시간 좌표 캐시 상태
+  const [dragState, setDragState] = useState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
+  const [localPositions, setLocalPositions] = useState({});
+  
   const containerRef = useRef(null);
   const mindmapCollection = collection(db, 'mindmaps');
 
@@ -19,6 +21,17 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     return () => unsubscribe();
   }, [isEditorMode]);
 
+  // 국문 주석: 데이터 휘발 완전 차단 - 외부 Firestore 갱신 데이터 유입 시 로컬 좌표 캐시 싱크 동기화
+  useEffect(() => {
+    if (isEditorMode && currentMap?.nodes) {
+      const posMap = {};
+      currentMap.nodes.forEach(n => {
+        posMap[n.id] = { x: n.x || 150, y: n.y || 300 };
+      });
+      setLocalPositions(posMap);
+    }
+  }, [currentMap?.nodes, isEditorMode]);
+
   const handleCreateMap = async (e) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -26,48 +39,100 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     setNewTitle('');
   };
 
-  // 한글 주석: 문제점 1 해결 - 컨테이너 바운더리 기준 픽셀 역산 드래그 스타트 함수
+  // 국문 주석: 블록 내부 상하좌우 4대 고정점(Anchor Points) 좌표 산출 함수
+  const getAnchorPoints = (x, y, width = 160, height = 40) => {
+    return {
+      top: { x: x + width / 2, y: y },
+      bottom: { x: x + width / 2, y: y + height },
+      left: { x: x, y: y + height / 2 },
+      right: { x: x + width / 2, y: y + height / 2 } // 박스 가로축 연결 안정성을 위해 정비
+    };
+  };
+
+  // 국문 주석: 두 블록 간 최단 거리에 있는 최적의 상하좌우 앵커 조합 연산 알고리즘
+  const getBestAnchors = (srcNode, tgtNode) => {
+    const srcX = localPositions[srcNode.id]?.x || srcNode.x || 0;
+    const srcY = localPositions[srcNode.id]?.y || srcNode.y || 0;
+    const tgtX = localPositions[tgtNode.id]?.x || tgtNode.x || 0;
+    const tgtY = localPositions[tgtNode.id]?.y || tgtNode.y || 0;
+
+    const srcAnchors = getAnchorPoints(srcX, srcY);
+    const tgtAnchors = getAnchorPoints(tgtX, tgtY);
+
+    let minDistance = Infinity;
+    let bestSrc = srcAnchors.right;
+    let bestTgt = tgtAnchors.left;
+
+    Object.keys(srcAnchors).forEach(sKey => {
+      Object.keys(tgtAnchors).forEach(tKey => {
+        const sP = srcAnchors[sKey];
+        const tP = tgtAnchors[tKey];
+        const dist = Math.pow(sP.x - tP.x, 2) + Math.pow(sP.y - tP.y, 2);
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestSrc = sP;
+          bestTgt = tP;
+        }
+      });
+    });
+
+    return { sourcePt: bestSrc, targetPt: bestTgt };
+  };
+
+  // 국문 주석: 드래그 마우스 다운 핸들러
   const handleNodeMouseDown = (e, node) => {
     e.stopPropagation();
     if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
     
-    // 스크롤 및 브라우저 오프셋 보정 연산 적용
-    const mouseX = e.clientX - rect.left + containerRef.current.scrollLeft;
-    const mouseY = e.clientY - rect.top + containerRef.current.scrollTop;
+    const nodeX = localPositions[node.id]?.x || node.x || 0;
+    const nodeY = localPositions[node.id]?.y || node.y || 0;
 
-    setDragInfo({
+    setDragState({
       isDragging: true,
       nodeId: node.id,
-      offsetX: mouseX - (node.x || 0),
-      offsetY: mouseY - (node.y || 0)
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: nodeX,
+      initialY: nodeY
     });
   };
 
   const handleContainerMouseMove = (e) => {
-    if (!dragInfo.isDragging || !isEditorMode || !containerRef.current) return;
+    if (!dragState.isDragging || !isEditorMode) return;
     
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left + containerRef.current.scrollLeft;
-    const mouseY = e.clientY - rect.top + containerRef.current.scrollTop;
+    const deltaX = e.clientX - dragState.startX;
+    const deltaY = e.clientY - dragState.startY;
 
-    const updatedNodes = currentMap.nodes.map(n => {
-      if (n.id === dragInfo.nodeId) {
-        return { ...n, x: mouseX - dragInfo.offsetX, y: mouseY - dragInfo.offsetY };
+    setLocalPositions(prev => ({
+      ...prev,
+      [dragState.nodeId]: {
+        x: dragState.initialX + deltaX,
+        y: dragState.initialY + deltaY
       }
-      return n;
-    });
-    
-    currentMap.nodes = updatedNodes;
+    }));
   };
 
+  // 국문 주석: 마우스를 뗐을 때 무한 루프 차단 및 Firestore 데이터베이스 일괄 동기화 마감
   const handleNodeMouseUp = async () => {
-    if (!dragInfo.isDragging) return;
+    if (!dragState.isDragging) return;
+    
+    const targetId = dragState.nodeId;
+    const finalPos = localPositions[targetId];
+    
+    setDragState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
+
     try {
-      const docRef = doc(db, 'mindmaps', currentMap.id);
-      await updateDoc(docRef, { nodes: currentMap.nodes });
-    } catch (err) { console.error(err); }
-    setDragInfo({ isDragging: false, nodeId: null, offsetX: 0, offsetY: 0 });
+      const updatedNodes = currentMap.nodes.map(n => {
+        if (n.id === targetId && finalPos) {
+          return { ...n, x: finalPos.x, y: finalPos.y };
+        }
+        return n;
+      });
+
+      await updateDoc(doc(db, 'mindmaps', currentMap.id), { nodes: updatedNodes });
+    } catch (err) { 
+      console.error("데이터 저장 실패 복구:", err); 
+    }
   };
 
   if (!isEditorMode) {
@@ -100,39 +165,63 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
       onMouseLeave={handleNodeMouseUp}
       style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', background: '#111115' }}
     >
-      {/* 한글 주석: 문제점 2 해결 - 정렬 분산 연산이 주입된 SVG 라인 */}
+      {/* 국문 주석: 고정점 최단 거리 조합 추적형 곡선 SVG 레이어 */}
       <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0 }}>
         {currentMap.edges?.map((edge) => {
           const sourceNode = currentMap.nodes?.find(n => n.id === edge.source);
           const targetNode = currentMap.nodes?.find(n => n.id === edge.target);
           if (!sourceNode || !targetNode) return null;
 
-          const sX = (sourceNode.x || 0) + 160;
-          const sY = (sourceNode.y || 0) + 20;
-          const tX = targetNode.x || 0;
-          const tY = targetNode.y || 0 + 20;
+          const { sourcePt, targetPt } = getBestAnchors(sourceNode, targetNode);
+
+          // 이동 각도에 맞는 텐션 곡선 강도 보정 연산
+          const cpX1 = sourcePt.x + (targetPt.x > sourcePt.x ? 40 : -40);
+          const cpY1 = sourcePt.y;
+          const cpX2 = targetPt.x + (targetPt.x > sourcePt.x ? -40 : 40);
+          const cpY2 = targetPt.y;
 
           return (
-            <path key={edge.id} d={`M ${sX} ${sY} C ${sX + 80} ${sY}, ${tX - 80} ${tY}, ${tX} ${tY}`} stroke="#007aff" strokeWidth="2.5" fill="none" />
+            <path key={edge.id} d={`M ${sourcePt.x} ${sourcePt.y} C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${targetPt.x} ${targetPt.y}`} stroke="#007aff" strokeWidth="2.5" fill="none" />
           );
         })}
       </svg>
 
-      {currentMap.nodes?.map((node) => (
-        <div 
-          key={node.id}
-          onMouseDown={(e) => handleNodeMouseDown(e, node)}
-          style={{ position: 'absolute', left: `${node.x || 0}px`, top: `${node.y || 0}px`, width: '160px', zIndex: 10, background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', border: node.id === 'root' ? '1.5px solid #007aff' : '1px solid rgba(255,255,255,0.18)', borderRadius: '14px', padding: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', userSelect: 'none', cursor: 'grab' }}
-        >
-          <span onDoubleClick={() => onEditNodeClick(node.id, node.text)} style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '4px' }}>
-            {node.text}
-          </span>
-          <div style={{ display: 'flex', gap: '3px' }}>
-            <button onClick={(e) => { e.stopPropagation(); onAddNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
-            {node.id !== 'root' && <button onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
+      {currentMap.nodes?.map((node) => {
+        const pos = localPositions[node.id] || { x: node.x || 150, y: node.y || 300 };
+        const isSelected = dragState.nodeId === node.id;
+
+        return (
+          <div 
+            key={node.id} 
+            onMouseDown={(e) => handleNodeMouseDown(e, node)}
+            style={{ 
+              position: 'absolute', 
+              left: `${pos.x}px`, 
+              top: `${pos.y}px`, 
+              width: '160px', 
+              zIndex: isSelected ? 100 : 10, 
+              background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', 
+              // 국문 주석: 선택 피드백 반영 - 누르고 있을 때 푸른색 네온 글로우 테두리 스타일 실시간 투하
+              border: isSelected ? '1.5px solid #007aff' : node.id === 'root' ? '1.5px solid rgba(0,122,255,0.5)' : '1px solid rgba(255,255,255,0.18)', 
+              boxShadow: isSelected ? '0 0 15px rgba(0, 122, 255, 0.8), 0 8px 24px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.5)',
+              borderRadius: '14px', 
+              padding: '10px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              userSelect: 'none', 
+              cursor: dragState.isDragging ? 'grabbing' : 'grab',
+              transition: isSelected ? 'none' : 'box-shadow 0.15s ease, border-color 0.15s ease'
+            }}
+          >
+            <span onDoubleClick={() => onEditNodeClick(node.id, node.text)} style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '4px', cursor: 'text' }}>{node.text}</span>
+            <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
+              <button onClick={(e) => { e.stopPropagation(); onAddNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
+              {node.id !== 'root' && <button onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
