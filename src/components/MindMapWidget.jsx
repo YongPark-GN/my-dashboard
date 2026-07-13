@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase'; 
-import { collection, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'; 
 
 export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selectedMapId, openModal }) {
   const [mindmaps, setMindmaps] = useState([]);
@@ -10,13 +10,13 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   const [editorNodes, setEditorNodes] = useState([]);
   const [editorEdges, setEditorEdges] = useState([]);
   
+  const [zoom, setZoom] = useState(1);
   const containerRef = useRef(null);
 
   useEffect(() => {
     if (isEditorMode || !userId) return;
     
     const mindmapCollection = collection(db, 'users', userId, 'mindmaps');
-    // 핵심 로직: 토큰 재검증 단계의 동기화 튕김 에러 제어용 에러 콜백 결속
     const unsubscribe = onSnapshot(mindmapCollection, (snapshot) => {
       setMindmaps(snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
     }, (err) => {
@@ -28,8 +28,9 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   useEffect(() => {
     if (!isEditorMode || !selectedMapId || !userId) return;
     
+    setZoom(1);
+
     const docRef = doc(db, 'users', userId, 'mindmaps', selectedMapId);
-    // 핵심 로직: 내부 에디터 단일 인스턴스 스트리밍 트랜잭션 에러 가드 배치
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists() && !dragState.isDragging) {
         const rawData = docSnap.data();
@@ -42,6 +43,20 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     return () => unsubscribe();
   }, [selectedMapId, isEditorMode, dragState.isDragging, userId]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isEditorMode) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault(); 
+      const zoomFactor = 0.05;
+      setZoom(prev => Math.min(Math.max(prev + (e.deltaY < 0 ? zoomFactor : -zoomFactor), 0.3), 2.0));
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [isEditorMode]);
+
   const handleCreateMap = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !userId) return;
@@ -49,6 +64,21 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     const mindmapCollection = collection(db, 'users', userId, 'mindmaps');
     await addDoc(mindmapCollection, { title: newTitle, createdAt: new Date().toISOString(), nodes: [{ id: 'root', text: newTitle, x: 150, y: 300 }], edges: [] });
     setNewTitle('');
+  };
+
+  // 핵심 로직: 영구 삭제를 실행하기 전 팝업을 띄워 유저에게 취소 기회를 주는 확인 가드 기능
+  const handleDeleteMap = async (mapId) => {
+    if (!userId) return;
+    
+    // 핵심 로직: 대화상자를 노출하여 취소 선택 시 함수를 조기 종료해 안전성 확보
+    const confirmDelete = confirm("이 마인드맵을 정말로 삭제하시겠습니까?\n[취소]를 누르면 삭제가 철회되고 보존됩니다.");
+    if (!confirmDelete) return; // 취소를 선택했을 경우 뒤에 오는 Firestore 삭제 구문 실행을 차단
+    
+    try {
+      await deleteDoc(doc(db, 'users', userId, 'mindmaps', mapId));
+    } catch (err) {
+      console.error("마인드맵 삭제 실패:", err);
+    }
   };
 
   const getAnchorPoints = (nodeId) => {
@@ -79,15 +109,22 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     return { sourcePt: bestSrc, targetPt: bestTgt };
   };
 
-  const handleNodeMouseDown = (e, node) => {
+  const handleNodeMouseDown = (e) => {
     if (e.target.tagName === 'BUTTON') return; 
     e.stopPropagation();
+    const nodeEl = e.currentTarget;
+    const nodeId = nodeEl.id.replace('mm-node-', '');
+    const node = editorNodes.find(n => n.id === nodeId);
+    if (!node) return;
+
     setDragState({ isDragging: true, nodeId: node.id, startX: e.clientX, startY: e.clientY, initialX: node.x || 0, initialY: node.y || 0 });
   };
 
   const handleContainerMouseMove = (e) => {
     if (!dragState.isDragging || !isEditorMode) return;
-    const deltaX = e.clientX - dragState.startX; const deltaY = e.clientY - dragState.startY;
+    const deltaX = (e.clientX - dragState.startX) / zoom;
+    const deltaY = (e.clientY - dragState.startY) / zoom;
+    
     setEditorNodes(prevNodes => prevNodes.map(n => n.id === dragState.nodeId ? { ...n, x: dragState.initialX + deltaX, y: dragState.initialY + deltaY } : n));
   };
 
@@ -140,8 +177,9 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
         </form>
         <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {mindmaps.map((map) => (
-            <div key={map.id} onClick={() => onSelectMap(map)} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '8px 12px', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
-              <span style={{ color: '#ffffff' }}>{map.title}</span>
+            <div key={map.id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '8px 12px', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span onClick={() => onSelectMap(map)} style={{ color: '#ffffff', flex: 1, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{map.title}</span>
+              <button onClick={(e) => { e.stopPropagation(); handleDeleteMap(map.id); }} style={{ background: 'transparent', border: 'none', color: '#ff3b30', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', padding: '2px 4px', borderRadius: '4px', marginLeft: '8px' }}>삭제</button>
             </div>
           ))}
         </div>
@@ -151,29 +189,36 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
 
   return (
     <div ref={containerRef} onMouseMove={handleContainerMouseMove} onMouseUp={handleNodeMouseUp} onMouseLeave={handleNodeMouseUp} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', background: '#111115' }}>
-      <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0 }}>
-        {editorEdges?.map((edge) => {
-          const sourceNode = editorNodes.find(n => n.id === edge.source); const targetNode = editorNodes.find(n => n.id === edge.target);
-          if (!sourceNode || !targetNode) return null;
-          const { sourcePt, targetPt } = getBestAnchors(sourceNode, targetNode);
-          const cpX1 = sourcePt.x + (targetPt.x > sourcePt.x ? 60 : -60); const cpY1 = sourcePt.y;
-          const cpX2 = targetPt.x + (targetPt.x > sourcePt.x ? -60 : 60); const cpY2 = targetPt.y;
-          return <path key={edge.id} d={`M ${sourcePt.x} ${sourcePt.y} C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${targetPt.x} ${targetPt.y}`} stroke="#007aff" strokeWidth="2.5" fill="none" />;
-        })}
-      </svg>
+      
+      <div style={{ position: 'fixed', top: '100px', right: '60px', zIndex: 10000, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)', padding: '6px 12px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: '600', border: '1px solid rgba(255,255,255,0.1)' }}>
+        🔍 배율: {Math.round(zoom * 100)}%
+      </div>
 
-      {editorNodes.map((node) => {
-        const isSelected = dragState.nodeId === node.id;
-        return (
-          <div key={node.id} id={`mm-node-${node.id}`} onMouseDown={(e) => handleNodeMouseDown(e, node)} style={{ position: 'absolute', left: `${node.x || 0}px`, top: `${node.y || 0}px`, minWidth: '160px', maxWidth: '300px', width: 'auto', height: 'auto', zIndex: isSelected ? 100 : 10, background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', border: isSelected ? '1.5px solid #007aff' : node.id === 'root' ? '1.5px solid rgba(0,122,255,0.5)' : '1px solid rgba(255,255,255,0.18)', boxShadow: isSelected ? '0 0 15px rgba(0, 122, 255, 0.8), 0 8px 24px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.5)', borderRadius: '14px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', userSelect: 'none', cursor: dragState.isDragging ? 'grabbing' : 'grab' }}>
-            <span onDoubleClick={() => internalEditNode(node.id, node.text)} style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ffffff', whiteSpace: 'pre-wrap', wordBreak: 'break-all', flex: 1, cursor: 'text' }}>{node.text}</span>
-            <div style={{ display: 'flex', gap: '4px', flexShrink: 0, alignItems: 'center' }}>
-              <button onClick={() => internalAddNode(node.id)} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
-              {node.id !== 'root' && <button onClick={() => internalDeleteNode(node.id)} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
+      <div style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: '4000px', height: '4000px', position: 'relative' }}>
+        <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0 }}>
+          {editorEdges?.map((edge) => {
+            const sourceNode = editorNodes.find(n => n.id === edge.source); const targetNode = editorNodes.find(n => n.id === edge.target);
+            if (!sourceNode || !targetNode) return null;
+            const { sourcePt, targetPt } = getBestAnchors(sourceNode, targetNode);
+            const cpX1 = sourcePt.x + (targetPt.x > sourcePt.x ? 60 : -60); const cpY1 = sourcePt.y;
+            const cpX2 = targetPt.x + (targetPt.x > sourcePt.x ? -60 : 60); const cpY2 = targetPt.y;
+            return <path key={edge.id} d={`M ${sourcePt.x} ${sourcePt.y} C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${targetPt.x} ${targetPt.y}`} stroke="#007aff" strokeWidth="2.5" fill="none" />;
+          })}
+        </svg>
+
+        {editorNodes.map((node) => {
+          const isSelected = dragState.nodeId === node.id;
+          return (
+            <div key={node.id} id={`mm-node-${node.id}`} onMouseDown={handleNodeMouseDown} style={{ position: 'absolute', left: `${node.x || 0}px`, top: `${node.y || 0}px`, minWidth: '160px', maxWidth: '300px', width: 'auto', height: 'auto', zIndex: isSelected ? 100 : 10, background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', border: isSelected ? '1.5px solid #007aff' : node.id === 'root' ? '1.5px solid rgba(0,122,255,0.5)' : '1px solid rgba(255,255,255,0.18)', boxShadow: isSelected ? '0 0 15px rgba(0, 122, 255, 0.8), 0 8px 24px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.5)', borderRadius: '14px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', userSelect: 'none', cursor: dragState.isDragging ? 'grabbing' : 'grab' }}>
+              <span onDoubleClick={() => internalEditNode(node.id, node.text)} style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ffffff', whiteSpace: 'pre-wrap', wordBreak: 'break-all', flex: 1, cursor: 'text' }}>{node.text}</span>
+              <div style={{ display: 'flex', gap: '4px', flexShrink: 0, alignItems: 'center' }}>
+                <button onClick={() => internalAddNode(node.id)} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
+                {node.id !== 'root' && <button onClick={() => internalDeleteNode(node.id)} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
