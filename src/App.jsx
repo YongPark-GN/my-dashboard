@@ -3,6 +3,8 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import MindMapWidget from './components/MindMapWidget';
+
+// 파이어베이스 DB 인스턴스 및 라이브러리 메서드 로드
 import { db } from './firebase';
 import { doc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 
@@ -18,6 +20,7 @@ const iosLiquidGlassTheme = `
     color: #ffffff; 
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.3px;
     width: 100vw !important;
     max-width: 100vw !important;
     overflow-x: hidden;
@@ -31,10 +34,15 @@ const iosLiquidGlassTheme = `
   .react-calendar__tile:enabled:hover { background-color: rgba(255,255,255,0.08) !important; border-radius: 12px; }
   .react-calendar__tile--now { background: rgba(255,255,255,0.15) !important; border-radius: 12px; font-weight: 600; }
   .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; }
+  
   .sat-tile { color: #30a9ff !important; }
   .sun-tile { color: #ff3b30 !important; }
+
   .ios-resize-trigger { position: absolute; right: 8px; bottom: 8px; width: 12px; height: 12px; cursor: se-resize; z-index: 15; }
   .ios-resize-trigger::after { content: ""; position: absolute; right: 2px; bottom: 2px; width: 4px; height: 4px; border-right: 2px solid rgba(255, 255, 255, 0.25); border-bottom: 2px solid rgba(255, 255, 255, 0.25); }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
 `;
 
 if (typeof document !== 'undefined') {
@@ -50,33 +58,111 @@ const iosLiquidGlassWidget = {
   borderRadius: '28px', 
   padding: '20px',
   border: '1px solid rgba(255, 255, 255, 0.12)',
-  boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 32px rgba(0, 0, 0, 0.4)',
+  boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 8px 32px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2)',
   color: '#ffffff',
   display: 'flex',
   flexDirection: 'column',
   boxSizing: 'border-box',
   overflow: 'hidden',
-  position: 'relative'
+  position: 'relative',
+  transition: 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.2s, opacity 0.2s',
+  cursor: 'grab'
 };
 
+const WEATHER_API_KEY = "2cabd2173d9f6036bf418d61e79b48f8";
+
+const getAqiStatus = (aqi) => {
+  switch(aqi) {
+    case 1: return { label: "좋음", color: "#34c759" }; 
+    case 2: return { label: "보통", color: "#ffcc00" }; 
+    case 3: return { label: "주의", color: "#ff9500" }; 
+    case 4: return { label: "나쁨", color: "#ff3b30" }; 
+    case 5: return { label: "위험", color: "#af52de" }; 
+    default: return { label: "정보 없음", color: "#8e8e93" };
+  }
+};
+
+const STAGES = [
+  { id: 'plan', label: '기획' },
+  { id: 'design', label: '설계' },
+  { id: 'simulation', label: '해석' },
+  { id: 'done', label: '완료' }
+];
+
 function DashboardContent() {
+  const [time, setTime] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [events, setEvents] = useState([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [accessToken, setAccessToken] = useState('');
+  const [weatherData, setWeatherData] = useState({ weather: null, pollution: null });
+  const [weatherLoading, setWeatherLoading] = useState(true);
+  const [weatherError, setWeatherError] = useState(null);
+
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [currentMindMap, setCurrentMindMap] = useState(null);
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add' });
 
-  const [widgetOrder, setWidgetOrder] = useState(['clock', 'calendar', 'mindmap']);
-  const [widgetSizes, setWidgetSizes] = useState({
-    clock: { width: 360, height: 260 }, 
-    calendar: { width: 360, height: 260 },
-    mindmap: { width: 360, height: 260 } 
+  const [tasks, setTasks] = useState(() => {
+    const saved = localStorage.getItem('dashboard_tasks');
+    return saved ? JSON.parse(saved) : [
+      { id: 't1', title: '527mm Enclosure 구조해석 및 압력 검토', stage: 'simulation', progress: 75 },
+      { id: 't2', title: '10-BAY GIS 가스 계통도 CAD 도면 설계', stage: 'design', progress: 40 },
+      { id: 't3', title: 'M30 앵커 볼트 전단 강도 스펙 수립', stage: 'plan', progress: 10 }
+    ];
+  });
+  
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+
+  const [widgetOrder, setWidgetOrder] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_order');
+    return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
   });
 
+  const [widgetSizes, setWidgetSizes] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_sizes');
+    return saved ? JSON.parse(saved) : {
+      clock: { width: 360, height: 260 }, 
+      weather: { width: 320, height: 260 },
+      workflow: { width: 664, height: 340 },
+      calendar: { width: 360, height: 260 },
+      scheduler: { width: 320, height: 260 },
+      mindmap: { width: 360, height: 260 } 
+    };
+  });
+
+  const [draggingId, setDraggingId] = useState(null);
   const [resizeTarget, setResizeTarget] = useState(null);
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
-  // 한글 주석: 데이터 휘발 버그 수정 - 메인 리스너 파이프라인 연계
+  useEffect(() => {
+    try {
+      if (!db) return;
+
+      const layoutConfigRef = doc(db, "dashboard", "layoutConfig");
+      const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const remoteData = docSnap.data();
+          if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
+          if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
+        }
+      });
+
+      const tasksRef = doc(db, "dashboard", "taskData");
+      const unsubscribeTasks = onSnapshot(tasksRef, (docSnap) => {
+        if (docSnap.exists() && docSnap.data()?.list) setTasks(docSnap.data().list);
+      });
+
+      return () => {
+        unsubscribeLayout();
+        unsubscribeTasks();
+      };
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isMindMapOpen || !currentMindMap?.id) return;
     const unsubscribe = onSnapshot(doc(db, 'mindmaps', currentMindMap.id), (docSnap) => {
@@ -86,6 +172,39 @@ function DashboardContent() {
     });
     return () => unsubscribe();
   }, [isMindMapOpen]);
+
+  const saveLayoutToFirestore = async (newOrder, newSizes) => {
+    localStorage.setItem('dashboard_widget_order', JSON.stringify(newOrder));
+    localStorage.setItem('dashboard_widget_sizes', JSON.stringify(newSizes));
+    try {
+      if (!db) return;
+      await setDoc(doc(db, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true });
+    } catch (err) { console.error(err); }
+  };
+
+  const saveTasksToFirestore = async (newTaskList) => {
+    localStorage.setItem('dashboard_tasks', JSON.stringify(newTaskList));
+    try {
+      if (!db) return;
+      await setDoc(doc(db, "dashboard", "taskData"), { list: newTaskList });
+    } catch (err) { console.error(err); }
+  };
+
+  const handleDragStart = (id) => { if (!resizeTarget) setDraggingId(id); };
+  const handleDragOver = (e) => { e.preventDefault(); };
+  const handleDrop = (targetId) => {
+    if (!draggingId || draggingId === targetId) return;
+    const currentOrder = [...widgetOrder];
+    const dragIdx = currentOrder.indexOf(draggingId);
+    const targetIdx = currentOrder.indexOf(targetId);
+    currentOrder[dragIdx] = targetId;
+    currentOrder[targetIdx] = draggingId;
+    setWidgetOrder(currentOrder);
+    setDraggingId(null);
+    saveLayoutToFirestore(currentOrder, widgetSizes); 
+  };
+
+  const handleDragEnd = () => { setDraggingId(null); };
 
   const initResize = (e, id) => {
     e.preventDefault(); e.stopPropagation();
@@ -104,7 +223,10 @@ function DashboardContent() {
         [resizeTarget]: { width: Math.max(260, startSize.width + deltaX), height: Math.max(220, startSize.height + deltaY) }
       }));
     };
-    const stopResize = () => setResizeTarget(null);
+    const stopResize = () => {
+      if (resizeTarget) saveLayoutToFirestore(widgetOrder, widgetSizes);
+      setResizeTarget(null);
+    };
     if (resizeTarget) {
       window.addEventListener('mousemove', doResize);
       window.addEventListener('mouseup', stopResize);
@@ -115,6 +237,83 @@ function DashboardContent() {
     };
   }, [resizeTarget, startPos, startSize]);
 
+  useEffect(() => {
+    const timer = setInterval(() => { setTime(new Date()); }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      try {
+        const [weatherRes, pollutionRes] = await Promise.all([
+          fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${WEATHER_API_KEY}&units=metric&lang=kr`),
+          fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${latitude}&lon=${longitude}&appid=${WEATHER_API_KEY}`)
+        ]);
+        setWeatherData({ weather: await weatherRes.json(), pollution: await pollutionRes.json() });
+        setWeatherLoading(false);
+      } catch (err) { console.error(err); }
+    });
+  }, []);
+
+  const clockFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  const clockParts = clockFormatter.formatToParts(time);
+  const hours = clockParts.find(p => p.type === 'hour').value;
+  const minutes = clockParts.find(p => p.type === 'minute').value;
+  const seconds = clockParts.find(p => p.type === 'second').value;
+  const ampm = clockParts.find(p => p.type === 'dayPeriod').value;
+
+  const fetchCalendarEvents = async (token, date) => {
+    try {
+      const startOfDay = new Date(date.setHours(0, 0, 0, 0)).toISOString();
+      const endOfDay = new Date(date.setHours(23, 59, 59, 999)).toISOString();
+      const response = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${startOfDay}&timeMax=${endOfDay}&orderBy=startTime&singleEvents=true`, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json();
+      if (data.items) {
+        setEvents(data.items.map((item, index) => {
+          let eventTime = '종일';
+          if (item.start.dateTime) {
+            eventTime = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(item.start.dateTime));
+          }
+          return { id: index, title: item.summary, time: eventTime };
+        }));
+      }
+    } catch (error) { console.error(error); }
+  };
+
+  const login = useGoogleLogin({
+    onSuccess: (res) => { setIsLoggedIn(true); setAccessToken(res.access_token); fetchCalendarEvents(res.access_token, selectedDate); },
+    scope: 'https://www.googleapis.com/auth/calendar.readonly'
+  });
+
+  const handleDateChange = (newDate) => {
+    setSelectedDate(newDate);
+    if (isLoggedIn && accessToken) fetchCalendarEvents(accessToken, newDate);
+  };
+
+  const moveTaskStage = (taskId, currentStage) => {
+    const stageOrder = ['plan', 'design', 'simulation', 'done'];
+    const nextIdx = stageOrder.indexOf(currentStage) + 1;
+    if (nextIdx >= stageOrder.length) return;
+    const updated = tasks.map(t => t.id === taskId ? { ...t, stage: stageOrder[nextIdx], progress: nextIdx === 3 ? 100 : Math.min(90, t.progress + 25) } : t);
+    setTasks(updated);
+    saveTasksToFirestore(updated); 
+  };
+
+  const addTask = (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim()) return;
+    const updated = [...tasks, { id: 't_' + Date.now(), title: newTaskTitle, stage: 'plan', progress: 0 }];
+    setTasks(updated);
+    saveTasksToFirestore(updated); 
+    setNewTaskTitle('');
+  };
+
+  const todayText = new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' }).format(selectedDate);
   const tileClassNameGetter = ({ date, view }) => {
     if (view === 'month') {
       const day = date.getDay();
@@ -124,7 +323,6 @@ function DashboardContent() {
     return null;
   };
 
-  // 한글 주석: 노드 데이터 입력 폼 제출 및 Firestore 전송
   const submitNodeData = async (e) => {
     if (e) e.preventDefault();
     if (!inputModal.text.trim() || !currentMindMap) return;
@@ -135,7 +333,6 @@ function DashboardContent() {
         const parentNode = currentMindMap.nodes.find(n => n.id === inputModal.nodeId);
         const newId = `node_${Date.now()}`;
         
-        // 구조 개편: 직속 부모의 Y축 위치값을 역산하여 교차 문제 해결
         const childCount = currentMindMap.edges ? currentMindMap.edges.filter(edge => edge.source === inputModal.nodeId).length : 0;
         const offsetMultiplier = childCount % 2 === 0 ? 1 : -1;
         
@@ -169,22 +366,108 @@ function DashboardContent() {
     } catch (err) { console.error(err); }
   };
 
+  const renderWidgetContent = (id) => {
+    switch (id) {
+      case 'clock':
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+            <div style={{ fontSize: '3.8rem', fontWeight: '700', fontFamily: 'monospace' }}>
+              {hours}:{minutes}<span style={{ fontSize: '2.5rem', color: 'rgba(255,255,255,0.4)', marginLeft: '4px' }}>{seconds}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', marginLeft: '14px', fontSize: '0.9rem', fontWeight: '700' }}>
+              <span style={{ color: ampm === 'AM' ? '#ffffff' : 'rgba(255,255,255,0.15)' }}>AM</span>
+              <span style={{ color: ampm === 'PM' ? '#ffffff' : 'rgba(255,255,255,0.15)' }}>PM</span>
+            </div>
+          </div>
+        );
+      case 'weather':
+        return weatherLoading ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'rgba(255,255,255,0.3)' }}>날씨 동기화 중...</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '2.8rem', fontWeight: '200' }}>{Math.round(weatherData.weather.main.temp)}°</div>
+                <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>{weatherData.weather.weather[0].description}</div>
+              </div>
+              <span style={{ fontSize: '0.75rem', backgroundColor: 'rgba(255,255,255,0.1)', padding: '4px 10px', borderRadius: '10px' }}>{weatherData.weather.name}</span>
+            </div>
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px', marginTop: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                <span style={{ color: 'rgba(255,255,255,0.4)' }}>대기질</span>
+                <span style={{ fontWeight: '600', color: getAqiStatus(weatherData.pollution.list[0].main.aqi).color }}>{getAqiStatus(weatherData.pollution.list[0].main.aqi).label}</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'workflow':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)' }}>공정 파이프라인</span>
+              <form onSubmit={addTask} style={{ display: 'flex', gap: '6px' }}>
+                <input type="text" placeholder="새 과제" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '3px 8px', fontSize: '0.75rem', color: '#fff', outline: 'none' }} />
+                <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 8px', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}>+ 추가</button>
+              </form>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', flex: 1, overflowY: 'auto' }}>
+              {STAGES.map(stage => (
+                <div key={stage.id} style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '14px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>{stage.label}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', flex: 1 }}>
+                    {tasks.filter(t => t.stage === stage.id).map(task => (
+                      <div key={task.id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '8px', fontSize: '0.7rem' }}>
+                        <div>{task.title}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                          <span style={{ color: '#34c759' }}>{task.progress}%</span>
+                          {stage.id !== 'done' && <button onClick={() => moveTaskStage(task.id, task.stage)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', cursor: 'pointer' }}>➔</button>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case 'calendar':
+        return (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', width: '100%' }}>
+            <Calendar onChange={handleDateChange} value={selectedDate} calendarType="gregory" tileClassName={tileClassNameGetter} formatDay={(locale, date) => date.getDate().toString()} formatShortWeekday={(locale, date) => ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]} />
+          </div>
+        );
+      case 'scheduler':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '10px' }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: '600' }}>{todayText}</div>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {!isLoggedIn ? (
+                <button onClick={() => login()} style={{ padding: '10px', background: '#ffffff', color: '#000', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '600', width: '100%' }}>구글 계정 연결</button>
+              ) : (
+                events.map(event => (
+                  <div key={event.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '6px' }}>
+                    <span>{event.title}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>{event.time}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        );
+      case 'mindmap':
+        return <MindMapWidget onSelectMap={(map) => { setCurrentMindMap(map); setIsMindMapOpen(true); }} />;
+      default: return null;
+    }
+  };
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
         {widgetOrder.map((id) => (
-          <div key={id} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px` }}>
-            {id === 'clock' && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, fontSize: '3rem', fontWeight: '700' }}>
-                12:07
-              </div>
-            )}
-            {id === 'calendar' && (
-              <Calendar value={selectedDate} calendarType="gregory" tileClassName={tileClassNameGetter} formatDay={(locale, date) => date.getDate().toString()} formatShortWeekday={(locale, date) => ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]} />
-            )}
-            {id === 'mindmap' && (
-              <MindMapWidget onSelectMap={(map) => { setCurrentMindMap(map); setIsMindMapOpen(true); }} />
-            )}
+          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}>
+            {renderWidgetContent(id)}
             <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
           </div>
         ))}
