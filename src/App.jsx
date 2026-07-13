@@ -23,12 +23,12 @@ const iosLiquidGlassTheme = `
   .react-calendar { background: transparent !important; color: #ffffff !important; border: none !important; width: 100% !important; }
   .react-calendar abbr { text-decoration: none !important; border-bottom: none !important; }
   .react-calendar__navigation button { color: #ffffff !important; background: none; }
-  .react-calendar__tile { color: #ffffff !important; background: none; border: none; padding: 10px 0; position: relative; }
-  .react-calendar__tile--now { background: rgba(255,255,255,0.15) !important; border-radius: 12px; }
-  .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; }
+  .react-calendar__tile { color: #ffffff !important; background: none; border: none; padding: 12px 0; position: relative; font-size: 0.9rem; }
+  .react-calendar__tile--now { background: rgba(255,255,255,0.1) !important; border-radius: 12px; }
+  .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; font-weight: bold; }
   .sat-tile { color: #30a9ff !important; }
   .sun-tile { color: #ff3b30 !important; }
-  .ios-resize-trigger { position: absolute; right: 8px; bottom: 8px; width: 12px; height: 12px; cursor: se-resize; z-index: 15; }
+  .ios-resize-trigger { position: absolute; right: 10px; bottom: 10px; width: 14px; height: 14px; cursor: se-resize; z-index: 15; opacity: 0.5; }
 `;
 
 if (typeof document !== 'undefined') {
@@ -40,22 +40,19 @@ if (typeof document !== 'undefined') {
 const iosLiquidGlassWidget = {
   background: 'linear-gradient(135deg, rgba(32, 32, 36, 0.7) 0%, rgba(16, 16, 18, 0.75) 100%)',
   backdropFilter: 'blur(40px) saturate(200%)',
-  borderRadius: '28px', padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)', color: '#ffffff', display: 'flex', flexDirection: 'column',
-  boxSizing: 'border-box', overflow: 'hidden', position: 'relative', cursor: 'grab'
+  borderRadius: '32px', padding: '24px', border: '1px solid rgba(255, 255, 255, 0.1)',
+  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)', color: '#ffffff', display: 'flex', flexDirection: 'column',
+  boxSizing: 'border-box', overflow: 'hidden', position: 'relative'
 };
 
 function DashboardContent({ userId, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
 
-  // 핵심 로직: 새로고침 시 로컬 저장소에서 유효한 캘린더 토큰이 존재하면 자동으로 징검다리 로그인 상태 주입
   const [accessToken, setAccessToken] = useState(() => {
     const savedToken = localStorage.getItem(`cal_token_${userId}`);
     const savedExpiry = localStorage.getItem(`cal_expiry_${userId}`);
-    if (savedToken && savedExpiry && Date.now() < Number(savedExpiry)) {
-      return savedToken;
-    }
+    if (savedToken && savedExpiry && Date.now() < Number(savedExpiry)) return savedToken;
     return '';
   });
 
@@ -67,6 +64,8 @@ function DashboardContent({ userId, onLogout }) {
 
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState(null);
+  
+  // 핵심 로직: 블록 입력 모달 상태
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
 
   const [widgetOrder, setWidgetOrder] = useState(() => {
@@ -97,57 +96,38 @@ function DashboardContent({ userId, onLogout }) {
         if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
         if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
       }
-    }, (err) => {
-      console.warn("세션 갱신 중 레이아웃 동기화 유예 복구:", err.message);
-    });
+    }, (err) => console.warn(err.message));
     return () => unsubscribeLayout();
   }, [userId]);
 
   useEffect(() => {
     if (!accessToken) return;
-
     const fetchGoogleCalendarEvents = async () => {
       try {
         const startOfDay = new Date(selectedDate);
         startOfDay.setHours(0, 0, 0, 0);
-        
         const endOfDay = new Date(selectedDate);
         endOfDay.setHours(23, 59, 59, 999);
-
         const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${startOfDay.toISOString()}&timeMax=${endOfDay.toISOString()}&singleEvents=true&orderBy=startTime`;
-        
-        const response = await fetch(url, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        
+        const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
         const data = await response.json();
-        
         if (data.error) {
-          // 핵심 로직: 만약 캐싱된 토큰이 세션 에러를 반환하면 파괴하고 동기화 초기화 조치
           if (data.error.code === 401) {
             localStorage.removeItem(`cal_token_${userId}`);
             localStorage.removeItem(`cal_expiry_${userId}`);
-            setIsLoggedIn(false);
-            setAccessToken('');
+            setIsLoggedIn(false); setAccessToken('');
           }
-          console.error("구글 캘린더 API 반환 에러 세부정보:", data.error);
           return;
         }
-        
         if (data.items) {
           const formattedEvents = data.items.map(item => ({
-            id: item.id,
-            title: item.summary || '제목 없음',
-            start: item.start.dateTime || item.start.date,
-            end: item.end.dateTime || item.end.date,
+            id: item.id, title: item.summary || '제목 없음',
+            start: item.start.dateTime || item.start.date, end: item.end.dateTime || item.end.date,
           }));
           setEvents(formattedEvents);
         }
-      } catch (err) {
-        console.error("네트워크 통신 장애 발생:", err);
-      }
+      } catch (err) {}
     };
-
     fetchGoogleCalendarEvents();
   }, [accessToken, selectedDate, userId]);
 
@@ -155,74 +135,65 @@ function DashboardContent({ userId, onLogout }) {
     if (!userId) return;
     localStorage.setItem(`order_${userId}`, JSON.stringify(newOrder));
     localStorage.setItem(`sizes_${userId}`, JSON.stringify(newSizes));
-    try {
-      if (!db) return;
-      await setDoc(doc(db, "users", userId, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true });
-    } catch (err) { console.error(err); }
+    try { if (db) await setDoc(doc(db, "users", userId, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true }); } catch (err) {}
   };
 
   const handleDragStart = (id) => { if (!resizeTarget) setDraggingId(id); };
   const handleDragOver = (e) => { e.preventDefault(); };
   const handleDragEnd = () => { setDraggingId(null); };
-
   const handleDrop = (targetId) => {
     if (!draggingId || draggingId === targetId) return;
     const currentOrder = [...widgetOrder];
     const dragIdx = currentOrder.indexOf(draggingId);
     const targetIdx = currentOrder.indexOf(targetId);
-    currentOrder[dragIdx] = targetId;
-    currentOrder[targetIdx] = draggingId;
-    setWidgetOrder(currentOrder);
-    setDraggingId(null);
+    currentOrder[dragIdx] = targetId; currentOrder[targetIdx] = draggingId;
+    setWidgetOrder(currentOrder); setDraggingId(null);
     saveLayoutToFirestore(currentOrder, widgetSizes); 
   };
 
   const initResize = (e, id) => {
     e.preventDefault(); e.stopPropagation();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     setResizeTarget(id);
     setStartSize({ width: widgetSizes[id].width, height: widgetSizes[id].height });
-    setStartPos({ x: e.clientX, y: e.clientY });
+    setStartPos({ x: clientX, y: clientY });
   };
 
   useEffect(() => {
     const doResize = (e) => {
       if (!resizeTarget) return;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       setWidgetSizes(prev => ({
         ...prev,
-        [resizeTarget]: { width: Math.max(260, startSize.width + (e.clientX - startPos.x)), height: Math.max(220, startSize.height + (e.clientY - startPos.y)) }
+        [resizeTarget]: { width: Math.max(260, startSize.width + (clientX - startPos.x)), height: Math.max(220, startSize.height + (clientY - startPos.y)) }
       }));
     };
-    const stopResize = () => {
-      if (resizeTarget) saveLayoutToFirestore(widgetOrder, widgetSizes);
-      setResizeTarget(null);
-    };
+    const stopResize = () => { if (resizeTarget) saveLayoutToFirestore(widgetOrder, widgetSizes); setResizeTarget(null); };
+    
     if (resizeTarget) {
-      window.addEventListener('mousemove', doResize);
-      window.addEventListener('mouseup', stopResize);
+      window.addEventListener('mousemove', doResize); window.addEventListener('mouseup', stopResize);
+      window.addEventListener('touchmove', doResize); window.addEventListener('touchend', stopResize);
     }
     return () => {
-      window.removeEventListener('mousemove', doResize);
-      window.removeEventListener('mouseup', stopResize);
+      window.removeEventListener('mousemove', doResize); window.removeEventListener('mouseup', stopResize);
+      window.removeEventListener('touchmove', doResize); window.removeEventListener('touchend', stopResize);
     };
   }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes]);
 
-  // 핵심 로직: 로그인 가동 시 발급된 인증 토큰과 만료 타임스탬프를 보증값으로 로컬에 세이브
   const login = useGoogleLogin({
     onSuccess: (res) => { 
-      setIsLoggedIn(true); 
-      setAccessToken(res.access_token); 
-      const expiryTime = Date.now() + (res.expires_in || 3600) * 1000; // 대개 1시간(3600초) 유효 보증
+      setIsLoggedIn(true); setAccessToken(res.access_token); 
+      const expiryTime = Date.now() + (res.expires_in || 3600) * 1000; 
       localStorage.setItem(`cal_token_${userId}`, res.access_token);
       localStorage.setItem(`cal_expiry_${userId}`, String(expiryTime));
     },
-    onError: (err) => console.error("구글 계정 연동 실패 정보:", err),
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
 
-  // 핵심 로직: 시스템 전역 로그아웃 터치 시 브라우저 내부 캐시 토큰 세트까지 함께 증발 조치
   const handleFullLogout = () => {
-    localStorage.removeItem(`cal_token_${userId}`);
-    localStorage.removeItem(`cal_expiry_${userId}`);
+    localStorage.removeItem(`cal_token_${userId}`); localStorage.removeItem(`cal_expiry_${userId}`);
     onLogout();
   };
 
@@ -231,6 +202,14 @@ function DashboardContent({ userId, onLogout }) {
     if (!inputModal.text.trim()) return;
     if (inputModal.onSubmit) inputModal.onSubmit(inputModal.text);
     setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
+  };
+
+  const handleFormKeyDown = (e) => {
+    // Enter를 누르면 저장 (Shift+Enter는 줄바꿈 허용)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleFormSubmit(e);
+    }
   };
 
   const renderWidgetContent = (id) => {
@@ -246,38 +225,48 @@ function DashboardContent({ userId, onLogout }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
-      <button onClick={handleFullLogout} style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.8rem' }}>로그아웃</button>
+    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '32px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
+      <button onClick={handleFullLogout} style={{ position: 'absolute', top: '32px', right: '32px', zIndex: 100, background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 20px', borderRadius: '14px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600', transition: 'background 0.2s' }}>로그아웃</button>
       
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start', marginTop: '40px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start', marginTop: '60px' }}>
         {widgetOrder.map((id) => (
-          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}>
+          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.4 : 1, cursor: 'grab' }}>
             {renderWidgetContent(id)}
-            <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
+            <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} onTouchStart={(e) => initResize(e, id)}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 0L0 12H12V0Z" fill="white"/></svg>
+            </div>
           </div>
         ))}
       </div>
 
       {isMindMapOpen && selectedMapId && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '600', color: '#007aff' }}>마인드맵 편집기</h2>
-            <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 16px', borderRadius: '10px', cursor: 'pointer' }}>닫기</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '20px', marginBottom: '24px' }}>
+            <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '700', color: '#007aff', letterSpacing: '-0.5px' }}>마인드맵 편집기</h2>
+            <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}>종료 및 닫기</button>
           </div>
-          <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ flex: 1, backgroundColor: '#0c0c0e', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', position: 'relative', overflow: 'hidden' }}>
             <MindMapWidget userId={userId} isEditorMode={true} selectedMapId={selectedMapId} openModal={(config) => setInputModal({ isOpen: true, ...config })} />
           </div>
         </div>
       )}
 
+      {/* 핵심 로직: 완성도 높은 텍스트에어리어 기반 멀티라인 모달 팝업 */}
       {inputModal.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <form onSubmit={handleFormSubmit} style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', color: '#fff' }}>
-            <h4 style={{ margin: '0 0 16px 0', fontSize: '1rem', color: '#007aff' }}>{inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}</h4>
-            <input type="text" value={inputModal.text} onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })} autoFocus style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: '#fff', outline: 'none', marginBottom: '16px' }} />
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>취소</button>
-              <button type="submit" style={{ background: '#007aff', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>확인</button>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <form onSubmit={handleFormSubmit} style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '360px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)' }}>
+            <h4 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#ffffff', fontWeight: '600' }}>{inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}</h4>
+            <textarea 
+              value={inputModal.text} 
+              onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })} 
+              onKeyDown={handleFormKeyDown}
+              autoFocus 
+              placeholder="내용을 입력하세요 (Shift+Enter로 줄바꿈)"
+              style={{ width: '100%', height: '100px', resize: 'none', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '1rem', outline: 'none', marginBottom: '24px', fontFamily: 'inherit', boxSizing: 'border-box' }} 
+            />
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null })} style={{ flex: 1, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>취소</button>
+              <button type="submit" style={{ flex: 1, background: '#007aff', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '700' }}>확인</button>
             </div>
           </form>
         </div>
@@ -291,21 +280,15 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); setLoading(false); });
     return () => unsubscribe();
   }, []);
 
-  if (loading) {
-    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff' }}>로딩 중...</div>;
-  }
-
+  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff' }}>로딩 중...</div>;
   if (!user) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
-        <button onClick={() => signInWithPopup(auth, googleProvider)} style={{ padding: '14px 24px', fontSize: '1rem', fontWeight: '600', borderRadius: '16px', background: '#007aff', color: '#fff', border: 'none', cursor: 'pointer' }}>
+        <button onClick={() => signInWithPopup(auth, googleProvider)} style={{ padding: '16px 32px', fontSize: '1.1rem', fontWeight: '700', borderRadius: '20px', background: '#007aff', color: '#fff', border: 'none', cursor: 'pointer', boxShadow: '0 8px 24px rgba(0, 122, 255, 0.4)' }}>
           Google 계정으로 로그인 (DB 접근)
         </button>
       </div>
