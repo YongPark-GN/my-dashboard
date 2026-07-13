@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import MindMapWidget from './components/MindMapWidget'; // 핵심 로직: 마인드맵 위젯 부품 임포트
 
 // 파이어베이스 DB 인스턴스 및 라이브러리 메서드 로드
 import { db } from './firebase';
@@ -92,13 +93,18 @@ function DashboardContent() {
     { id: 't3', title: 'M30 앵커 볼트 전단 강도 스펙 수립', stage: 'plan', progress: 10 }
   ]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [widgetOrder, setWidgetOrder] = useState(['clock', 'weather', 'workflow', 'calendar', 'scheduler']);
+
+  // 핵심 로직: widgetOrder 배열에 'mindmap' 식별 키 추가
+  const [widgetOrder, setWidgetOrder] = useState(['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap']);
+  
+  // 핵심 로직: widgetSizes 객체에 mindmap 위젯의 기본 너비와 높이 매핑
   const [widgetSizes, setWidgetSizes] = useState({
     clock: { width: 360, height: 260 }, 
     weather: { width: 320, height: 260 },
     workflow: { width: 664, height: 340 },
     calendar: { width: 360, height: 260 },
-    scheduler: { width: 320, height: 260 }
+    scheduler: { width: 320, height: 260 },
+    mindmap: { width: 360, height: 260 } 
   });
 
   const [draggingId, setDraggingId] = useState(null);
@@ -259,7 +265,6 @@ function DashboardContent() {
   const seconds = clockParts.find(p => p.type === 'second').value;
   const ampm = clockParts.find(p => p.type === 'dayPeriod').value;
 
-  // --- [핵심 복구 로직: 구글 캘린더 단독 조회 및 동기화 함수 파이프라인] ---
   const fetchCalendarEvents = async (token, date) => {
     try {
       const startOfDay = new Date(date.setHours(0, 0, 0, 0)).toISOString();
@@ -293,7 +298,6 @@ function DashboardContent() {
     scope: 'https://www.googleapis.com/auth/calendar.readonly',
   });
 
-  // --- [핵심 복구 로직: 에러 유발점이었던 날짜 스위칭 핸들러 복구 완료] ---
   const handleDateChange = (newDate) => {
     setSelectedDate(newDate);
     if (isLoggedIn && accessToken) {
@@ -427,6 +431,9 @@ function DashboardContent() {
             </div>
           </div>
         );
+      case 'mindmap':
+        // 핵심 로직: 새 카테고리 맵으로 매핑된 mindmap 식별자 호출 시 마인드맵 부품 출력
+        return <MindMapWidget />;
       default: return null;
     }
   };
