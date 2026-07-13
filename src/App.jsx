@@ -6,7 +6,7 @@ import MindMapWidget from './components/MindMapWidget';
 
 // 파이어베이스 DB 인스턴스 및 라이브러리 메서드 로드
 import { db } from './firebase';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 
 const iosLiquidGlassTheme = `
   body { 
@@ -29,7 +29,6 @@ const iosLiquidGlassTheme = `
   .react-calendar__tile--now { background: rgba(255,255,255,0.15) !important; border-radius: 12px; font-weight: 600; }
   .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; }
   
-  /* 토요일 파란색, 일요일 빨간색 일자 표기 스타일 */
   .sat-tile { color: #30a9ff !important; }
   .sun-tile { color: #ff3b30 !important; }
 
@@ -93,6 +92,11 @@ function DashboardContent() {
   const [weatherData, setWeatherData] = useState({ weather: null, pollution: null });
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState(null);
+
+  // 한글 주석: 마인드맵 팝업 격리 해제용 최상위 호이스팅 공용 상태 설정
+  const [isMindMapOpen, setIsMindMapOpen] = useState(false);
+  const [currentMindMap, setCurrentMindMap] = useState(null);
+  const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add' });
 
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem('dashboard_tasks');
@@ -166,6 +170,17 @@ function DashboardContent() {
       console.error("Firebase 로드 에러 우회:", e);
     }
   }, []);
+
+  // 한글 주석: 팝업창 내부 실시간 Firestore 리스너 연동 회로 수립
+  useEffect(() => {
+    if (!isMindMapOpen || !currentMindMap?.id) return;
+    const unsubscribe = onSnapshot(doc(db, 'mindmaps', currentMindMap.id), (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrentMindMap({ id: docSnap.id, ...docSnap.data() });
+      }
+    });
+    return () => unsubscribe();
+  }, [isMindMapOpen]);
 
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
     localStorage.setItem('dashboard_widget_order', JSON.stringify(newOrder));
@@ -364,6 +379,55 @@ function DashboardContent() {
     return null;
   };
 
+  // 한글 주석: 확인 버튼 오작동 수정을 위한 파이어베이스 업로드 파이프라인 연계 함수
+  const submitNodeData = async (e) => {
+    if (e) e.preventDefault();
+    if (!inputModal.text.trim() || !currentMindMap || !currentMindMap.id) return;
+
+    try {
+      const docRef = doc(db, 'mindmaps', currentMindMap.id);
+
+      if (inputModal.mode === 'add') {
+        const parentNode = currentMindMap.nodes.find(n => n.id === inputModal.nodeId);
+        const newId = `node_${Date.now()}`;
+        const newNode = {
+          id: newId,
+          text: inputModal.text,
+          x: (parentNode?.x || 250) + 200,
+          y: (parentNode?.y || 150) + (Math.random() * 80 - 40)
+        };
+        const newEdge = { id: `e_${inputModal.nodeId}_${newId}`, source: inputModal.nodeId, target: newId };
+
+        const nextNodes = currentMindMap.nodes ? [...currentMindMap.nodes, newNode] : [newNode];
+        const nextEdges = currentMindMap.edges ? [...currentMindMap.edges, newEdge] : [newEdge];
+
+        await updateDoc(docRef, { nodes: nextNodes, edges: nextEdges });
+      } else if (inputModal.mode === 'edit') {
+        const updatedNodes = currentMindMap.nodes.map(node => 
+          node.id === inputModal.nodeId ? { ...node, text: inputModal.text } : node
+        );
+        await updateDoc(docRef, { nodes: updatedNodes });
+      }
+
+      setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' });
+    } catch (error) {
+      console.error("Firestore 저장 실패:", error);
+    }
+  };
+
+  const handleDeleteNode = async (nodeId) => {
+    if (nodeId === 'root') return alert('중심 블록은 삭제할 수 없습니다.');
+    if (!confirm('이 블록을 삭제하시겠습니까?')) return;
+
+    const updatedNodes = currentMindMap.nodes.filter(node => node.id !== nodeId);
+    const updatedEdges = currentMindMap.edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId);
+
+    await updateDoc(doc(db, 'mindmaps', currentMindMap.id), {
+      nodes: updatedNodes,
+      edges: updatedEdges
+    });
+  };
+
   const renderWidgetContent = (id) => {
     switch (id) {
       case 'clock':
@@ -442,7 +506,6 @@ function DashboardContent() {
               value={selectedDate} 
               calendarType="gregory" 
               tileClassName={tileClassNameGetter}
-              // 핵심 수정: '1일', '2일' 문구 대신 순수 숫자('1', '2')만 반환하도록 슬라이싱 변경
               formatDay={(locale, date) => date.getDate().toString()}
               formatShortWeekday={(locale, date) => ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]} 
             />
@@ -474,14 +537,17 @@ function DashboardContent() {
           </div>
         );
       case 'mindmap':
-        return <MindMapWidget />;
+        // 한글 주석: 위젯 내부에는 목록만 출력되도록 공용 컨트롤 트리거 핸들러 바인딩
+        return <MindMapWidget onSelectMap={(map) => { setCurrentMindMap(map); setIsMindMapOpen(true); }} />;
       default: return null;
     }
   };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyItems: 'flex-start', alignItems: 'flex-start' }}>
+      
+      {/* 문제점 1 해결: 위젯 목록 컨테이너 박스 (margin 0 및 왼쪽 정렬 강제 고정으로 여백 소멸) */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
         {widgetOrder.map((id) => (
           <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}>
             {renderWidgetContent(id)}
@@ -489,6 +555,76 @@ function DashboardContent() {
           </div>
         ))}
       </div>
+
+      {/* 문제점 1 & 2 영구 해결: 부모 위젯 카드의 transform 격리벽을 완전히 뚫고 나온 완전 독립 계층 배치 */}
+      {isMindMapOpen && currentMindMap && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '16px', marginBottom: '20px', flexShrink: 0 }}>
+            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '600', color: '#007aff' }}>{currentMindMap.title} (마인드맵 편집기)</h2>
+            <button onClick={() => setIsMindMapOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 16px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}>전체창 닫기</button>
+          </div>
+
+          {/* 마인드맵 노드 드로잉 보드 */}
+          <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', position: 'relative', overflow: 'auto' }}>
+            {currentMindMap.nodes?.map((node) => (
+              <div 
+                key={node.id}
+                style={{ position: 'absolute', left: `${node.x}px`, top: `${node.y}px`, background: 'linear-gradient(135deg, rgba(40,40,44,0.9) 0%, rgba(28,28,30,0.95) 100%)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '12px', padding: '10px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
+              >
+                <span 
+                  onDoubleClick={() => setInputModal({ isOpen: true, nodeId: node.id, text: node.text, mode: 'edit' })}
+                  style={{ fontSize: '0.85rem', fontWeight: '600', color: '#ffffff', cursor: 'pointer' }}
+                >
+                  {node.text}
+                </span>
+                
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button 
+                    onClick={() => setInputModal({ isOpen: true, nodeId: node.id, text: '', mode: 'add' })} 
+                    style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    +
+                  </button>
+                  {node.id !== 'root' && (
+                    <button 
+                      onClick={() => handleDeleteNode(node.id)} 
+                      style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      -
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 블록 추가 및 수정 확인용 입력 모달창 */}
+          {inputModal.isOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <form onSubmit={submitNodeData} style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)', color: '#fff' }}>
+                <h4 style={{ margin: '0 0 16px 0', fontSize: '1rem', fontWeight: '600', color: '#007aff' }}>
+                  {inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}
+                </h4>
+                <input 
+                  type="text" 
+                  value={inputModal.text} 
+                  onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })}
+                  placeholder="텍스트를 입력하세요"
+                  autoFocus
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', fontSize: '0.85rem', color: '#fff', outline: 'none', boxSizing: 'border-box', marginBottom: '16px' }}
+                />
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>취소</button>
+                  <button type="submit" style={{ background: '#007aff', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>확인</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+        </div>
+      )}
+
     </div>
   );
 }
