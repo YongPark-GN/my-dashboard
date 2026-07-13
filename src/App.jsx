@@ -52,7 +52,7 @@ function DashboardContent() {
   const [accessToken, setAccessToken] = useState('');
 
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
-  const [selectedMapId, setSelectedMapId] = useState(null); // 수정 logic: 무거운 객체 대신 ID만 추적하여 충돌 차단
+  const [selectedMapId, setSelectedMapId] = useState(null);
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', currentNodes: [], currentEdges: [] });
 
   const [widgetOrder, setWidgetOrder] = useState(() => {
@@ -98,6 +98,10 @@ function DashboardContent() {
 
   const handleDragStart = (id) => { if (!resizeTarget) setDraggingId(id); };
   const handleDragOver = (e) => { e.preventDefault(); };
+  
+  // 국문 주석: 이벤트 바인딩 오류 방지를 위한 정밀 핸들러 고정 선언
+  const handleDragEnd = () => { setDraggingId(null); };
+
   const handleDrop = (targetId) => {
     if (!draggingId || draggingId === targetId) return;
     const currentOrder = [...widgetOrder];
@@ -144,7 +148,6 @@ function DashboardContent() {
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
 
-  // 코드 핵심 logic: 자식(MindMapWidget)이 던져준 순수 노드 배열을 기반으로 새 블록 계산 및 스키마 유실 자동 방어
   const submitNodeData = async (e) => {
     if (e) e.preventDefault();
     if (!inputModal.text.trim() || !selectedMapId) return;
@@ -205,7 +208,15 @@ function DashboardContent() {
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
         {widgetOrder.map((id) => (
-          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}>
+          <div 
+            key={id} 
+            draggable={!resizeTarget} 
+            onDragStart={() => handleDragStart(id)} 
+            onDragOver={handleDragOver} 
+            onDrop={() => handleDrop(id)} 
+            onDragEnd={handleDragEnd} 
+            style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}
+          >
             {renderWidgetContent(id)}
             <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
           </div>
