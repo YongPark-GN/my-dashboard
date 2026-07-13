@@ -195,16 +195,15 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
         <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#007aff', letterSpacing: '-0.3px' }}>ZOOM</span>
         <input 
           type="range" 
-          min="0.3" 
+          min="0.1" // 핵심 로직: 축소 최소 경계 범위를 기존 0.3(30%)에서 0.1(10%)로 낮춰 축소 영역을 3배 확대
           max="2.0" 
           step="0.05" 
           value={zoom} 
           onChange={(e) => setZoom(parseFloat(e.target.value))} 
-          style={{ width: '110px', height: '4px', cursor: 'pointer', accentColor: '#007aff' }}
+          style={{ width: '220px', height: '4px', cursor: 'pointer', accentColor: '#007aff' }} // 핵심 로직: 바 길이를 기존 110px에서 220px로 2배 스케일업
         />
       </div>
 
-      {/* 핵심 로직: transformOrigin 주소를 기존 0 0에서 메인 루트 블록 정중앙인 2000px 2000px로 변경하여 줌 초점을 중앙에 바인딩 */}
       <div style={{ transform: `scale(${zoom})`, transformOrigin: '2000px 2000px', width: '4000px', height: '4000px', position: 'relative' }}>
         <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0 }}>
           {editorEdges?.map((edge) => {
