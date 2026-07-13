@@ -6,9 +6,9 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
   const [mindmaps, setMindmaps] = useState([]);
   const [newTitle, setNewTitle] = useState('');
   
-  // 국문 주석: 드래그 상태 머신 및 로컬 실시간 좌표 캐시 상태
+  // 국문 주석: 드래그 상태 머신 (불안정한 localPositions 상태를 폐기하고 단일 출처 관리)
   const [dragState, setDragState] = useState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
-  const [localPositions, setLocalPositions] = useState({});
+  const [editorNodes, setEditorNodes] = useState([]);
   
   const containerRef = useRef(null);
   const mindmapCollection = collection(db, 'mindmaps');
@@ -21,16 +21,14 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     return () => unsubscribe();
   }, [isEditorMode]);
 
-  // 국문 주석: 데이터 휘발 완전 차단 - 외부 Firestore 갱신 데이터 유입 시 로컬 좌표 캐시 싱크 동기화
+  // 국문 주석: 3중 검토 반영 - 파이어베이스 원격 스냅샷 데이터를 로컬 상태와 안전하게 동기화 (휘발 방지 핵심)
   useEffect(() => {
     if (isEditorMode && currentMap?.nodes) {
-      const posMap = {};
-      currentMap.nodes.forEach(n => {
-        posMap[n.id] = { x: n.x || 150, y: n.y || 300 };
-      });
-      setLocalPositions(posMap);
+      if (!dragState.isDragging) {
+        setEditorNodes(currentMap.nodes);
+      }
     }
-  }, [currentMap?.nodes, isEditorMode]);
+  }, [currentMap?.nodes, isEditorMode, dragState.isDragging]);
 
   const handleCreateMap = async (e) => {
     e.preventDefault();
@@ -39,25 +37,23 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     setNewTitle('');
   };
 
-  // 국문 주석: 블록 내부 상하좌우 4대 고정점(Anchor Points) 좌표 산출 함수
+  // 국문 주석: 상하좌우 4대 고정점 좌표 계산
   const getAnchorPoints = (x, y, width = 160, height = 40) => {
     return {
       top: { x: x + width / 2, y: y },
       bottom: { x: x + width / 2, y: y + height },
       left: { x: x, y: y + height / 2 },
-      right: { x: x + width / 2, y: y + height / 2 } // 박스 가로축 연결 안정성을 위해 정비
+      right: { x: x + width, y: y + height / 2 }
     };
   };
 
-  // 국문 주석: 두 블록 간 최단 거리에 있는 최적의 상하좌우 앵커 조합 연산 알고리즘
+  // 국문 주석: 모자 블록 간 최단 거리 고정점 매핑 알고리즘
   const getBestAnchors = (srcNode, tgtNode) => {
-    const srcX = localPositions[srcNode.id]?.x || srcNode.x || 0;
-    const srcY = localPositions[srcNode.id]?.y || srcNode.y || 0;
-    const tgtX = localPositions[tgtNode.id]?.x || tgtNode.x || 0;
-    const tgtY = localPositions[tgtNode.id]?.y || tgtNode.y || 0;
+    const sNode = editorNodes.find(n => n.id === srcNode.id) || srcNode;
+    const tNode = editorNodes.find(n => n.id === tgtNode.id) || tgtNode;
 
-    const srcAnchors = getAnchorPoints(srcX, srcY);
-    const tgtAnchors = getAnchorPoints(tgtX, tgtY);
+    const srcAnchors = getAnchorPoints(sNode.x || 0, sNode.y || 0);
+    const tgtAnchors = getAnchorPoints(tNode.x || 0, tNode.y || 0);
 
     let minDistance = Infinity;
     let bestSrc = srcAnchors.right;
@@ -79,21 +75,17 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     return { sourcePt: bestSrc, targetPt: bestTgt };
   };
 
-  // 국문 주석: 드래그 마우스 다운 핸들러
   const handleNodeMouseDown = (e, node) => {
     e.stopPropagation();
     if (!containerRef.current) return;
-    
-    const nodeX = localPositions[node.id]?.x || node.x || 0;
-    const nodeY = localPositions[node.id]?.y || node.y || 0;
 
     setDragState({
       isDragging: true,
       nodeId: node.id,
       startX: e.clientX,
       startY: e.clientY,
-      initialX: nodeX,
-      initialY: nodeY
+      initialX: node.x || 0,
+      initialY: node.y || 0
     });
   };
 
@@ -103,35 +95,23 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     const deltaX = e.clientX - dragState.startX;
     const deltaY = e.clientY - dragState.startY;
 
-    setLocalPositions(prev => ({
-      ...prev,
-      [dragState.nodeId]: {
-        x: dragState.initialX + deltaX,
-        y: dragState.initialY + deltaY
-      }
-    }));
+    setEditorNodes(prevNodes => 
+      prevNodes.map(n => n.id === dragState.nodeId ? { ...n, x: dragState.initialX + deltaX, y: dragState.initialY + deltaY } : n)
+    );
   };
 
-  // 국문 주석: 마우스를 뗐을 때 무한 루프 차단 및 Firestore 데이터베이스 일괄 동기화 마감
+  // 국문 주석: 마우스를 뗐을 때 최종 결정된 상태 배열을 딱 1회 파이어베이스에 동기화 저장
   const handleNodeMouseUp = async () => {
     if (!dragState.isDragging) return;
     
     const targetId = dragState.nodeId;
-    const finalPos = localPositions[targetId];
-    
     setDragState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
 
     try {
-      const updatedNodes = currentMap.nodes.map(n => {
-        if (n.id === targetId && finalPos) {
-          return { ...n, x: finalPos.x, y: finalPos.y };
-        }
-        return n;
-      });
-
-      await updateDoc(doc(db, 'mindmaps', currentMap.id), { nodes: updatedNodes });
+      const docRef = doc(db, 'mindmaps', currentMap.id);
+      await updateDoc(docRef, { nodes: editorNodes });
     } catch (err) { 
-      console.error("데이터 저장 실패 복구:", err); 
+      console.error("원격 DB 동기화 오류 복구:", err); 
     }
   };
 
@@ -165,19 +145,17 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
       onMouseLeave={handleNodeMouseUp}
       style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', background: '#111115' }}
     >
-      {/* 국문 주석: 고정점 최단 거리 조합 추적형 곡선 SVG 레이어 */}
       <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0 }}>
         {currentMap.edges?.map((edge) => {
-          const sourceNode = currentMap.nodes?.find(n => n.id === edge.source);
-          const targetNode = currentMap.nodes?.find(n => n.id === edge.target);
+          const sourceNode = editorNodes.find(n => n.id === edge.source);
+          const targetNode = editorNodes.find(n => n.id === edge.target);
           if (!sourceNode || !targetNode) return null;
 
           const { sourcePt, targetPt } = getBestAnchors(sourceNode, targetNode);
 
-          // 이동 각도에 맞는 텐션 곡선 강도 보정 연산
-          const cpX1 = sourcePt.x + (targetPt.x > sourcePt.x ? 40 : -40);
+          const cpX1 = sourcePt.x + (targetPt.x > sourcePt.x ? 60 : -60);
           const cpY1 = sourcePt.y;
-          const cpX2 = targetPt.x + (targetPt.x > sourcePt.x ? -40 : 40);
+          const cpX2 = targetPt.x + (targetPt.x > sourcePt.x ? -60 : 60);
           const cpY2 = targetPt.y;
 
           return (
@@ -186,8 +164,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
         })}
       </svg>
 
-      {currentMap.nodes?.map((node) => {
-        const pos = localPositions[node.id] || { x: node.x || 150, y: node.y || 300 };
+      {editorNodes.map((node) => {
         const isSelected = dragState.nodeId === node.id;
 
         return (
@@ -196,12 +173,11 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
             onMouseDown={(e) => handleNodeMouseDown(e, node)}
             style={{ 
               position: 'absolute', 
-              left: `${pos.x}px`, 
-              top: `${pos.y}px`, 
+              left: `${node.x || 0}px`, 
+              top: `${node.y || 0}px`, 
               width: '160px', 
               zIndex: isSelected ? 100 : 10, 
               background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', 
-              // 국문 주석: 선택 피드백 반영 - 누르고 있을 때 푸른색 네온 글로우 테두리 스타일 실시간 투하
               border: isSelected ? '1.5px solid #007aff' : node.id === 'root' ? '1.5px solid rgba(0,122,255,0.5)' : '1px solid rgba(255,255,255,0.18)', 
               boxShadow: isSelected ? '0 0 15px rgba(0, 122, 255, 0.8), 0 8px 24px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.5)',
               borderRadius: '14px', 
@@ -210,14 +186,14 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
               alignItems: 'center', 
               justifyContent: 'space-between', 
               userSelect: 'none', 
-              cursor: dragState.isDragging ? 'grabbing' : 'grab',
-              transition: isSelected ? 'none' : 'box-shadow 0.15s ease, border-color 0.15s ease'
+              cursor: dragState.isDragging ? 'grabbing' : 'grab'
             }}
           >
             <span onDoubleClick={() => onEditNodeClick(node.id, node.text)} style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '4px', cursor: 'text' }}>{node.text}</span>
             <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
-              <button onClick={(e) => { e.stopPropagation(); onAddNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
-              {node.id !== 'root' && <button onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
+              {/* 국문 주석: 핵심 해결 1 - 버튼 영역 클릭 시 onMouseDown 버블링을 완벽하게 끊어내 드래그 간섭 완전 차단 */}
+              <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onAddNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#34c759', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>+</button>
+              {node.id !== 'root' && <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id); }} style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>-</button>}
             </div>
           </div>
         );
