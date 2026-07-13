@@ -16,15 +16,29 @@ const iosLiquidGlassTheme = `
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.3px;
+    width: 100vw;
+    overflow-x: hidden;
   }
+  /* 캘린더 요일 밑줄 및 텍스트 데코레이션 제거 */
   .react-calendar { background: transparent !important; color: #ffffff !important; border: none !important; width: 100% !important; font-family: inherit; }
+  .react-calendar abbr { text-decoration: none !important; border-bottom: none !important; cursor: default; }
   .react-calendar__navigation button { color: #ffffff !important; min-width: 30px; background: none; font-size: 13px; font-weight: 500; }
   .react-calendar__navigation button:enabled:hover { background-color: rgba(255,255,255,0.06); border-radius: 6px; }
-  .react-calendar__month-view__weekdays { color: rgba(255,255,255,0.3) !important; text-transform: uppercase; font-weight: 600; font-size: 0.7rem; letter-spacing: 0.5px; }
-  .react-calendar__tile { color: #ffffff !important; background: none; border: none; padding: 8px 0; font-size: 0.85rem; }
-  .react-calendar__tile:enabled:hover { background-color: rgba(255,255,255,0.08) !important; border-radius: 50%; }
-  .react-calendar__tile--now { background: rgba(255,255,255,0.2) !important; border-radius: 50%; font-weight: 600; }
-  .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 50% !important; }
+  .react-calendar__month-view__weekdays { color: rgba(255,255,255,0.3) !important; text-transform: uppercase; font-weight: 600; font-size: 0.7rem; letter-spacing: 0.5px; padding-bottom: 8px; }
+  
+  /* 기본 타일 및 둥근 호버 효과 */
+  .react-calendar__tile { color: #ffffff !important; background: none; border: none; padding: 10px 0; font-size: 0.85rem; position: relative; }
+  .react-calendar__tile:enabled:hover { background-color: rgba(255,255,255,0.08) !important; border-radius: 12px; }
+  .react-calendar__tile--now { background: rgba(255,255,255,0.15) !important; border-radius: 12px; font-weight: 600; }
+  .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; }
+  
+  /* 토요일 파란색, 일요일 빨간색 개별 일자 표기 스타일링 */
+  .react-calendar__month-view__days__day--weekend {
+    color: #ffffff !important;
+  }
+  .sat-tile { color: #30a9ff !important; }
+  .sun-tile { color: #ff3b30 !important; }
+
   .ios-resize-trigger { position: absolute; right: 8px; bottom: 8px; width: 12px; height: 12px; cursor: se-resize; z-index: 15; }
   .ios-resize-trigger::after { content: ""; position: absolute; right: 2px; bottom: 2px; width: 4px; height: 4px; border-right: 2px solid rgba(255, 255, 255, 0.25); border-bottom: 2px solid rgba(255, 255, 255, 0.25); }
   ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -86,7 +100,6 @@ function DashboardContent() {
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState(null);
 
-  // 한글 주석: 초기 로드 시 LocalStorage에서 기존 태스크 상태를 불러와 새로고침 초기화 방지
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem('dashboard_tasks');
     return saved ? JSON.parse(saved) : [
@@ -98,7 +111,6 @@ function DashboardContent() {
   
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
-  // 한글 주석: 초기 로드 시 LocalStorage에서 위젯 정렬 순서 및 레이아웃 사이즈 불러오기
   const [widgetOrder, setWidgetOrder] = useState(() => {
     const saved = localStorage.getItem('dashboard_widget_order');
     return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
@@ -349,6 +361,16 @@ function DashboardContent() {
 
   const todayText = new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' }).format(selectedDate);
 
+  // 한글 주석: 문제점 3 해결 - 토요일/일요일 타일 색상 주입 커스텀 클래스 매퍼 추가
+  const tileClassNameGetter = ({ date, view }) => {
+    if (view === 'month') {
+      const day = date.getDay();
+      if (day === 6) return 'sat-tile';
+      if (day === 0) return 'sun-tile';
+    }
+    return null;
+  };
+
   const renderWidgetContent = (id) => {
     switch (id) {
       case 'clock':
@@ -422,7 +444,13 @@ function DashboardContent() {
       case 'calendar':
         return (
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', alignItems: 'center', width: '100%' }}>
-            <Calendar onChange={handleDateChange} value={selectedDate} calendarType="gregory" formatShortWeekday={(locale, date) => ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]} />
+            <Calendar 
+              onChange={handleDateChange} 
+              value={selectedDate} 
+              calendarType="gregory" 
+              tileClassName={tileClassNameGetter}
+              formatShortWeekday={(locale, date) => ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]} 
+            />
           </div>
         );
       case 'scheduler':
@@ -457,9 +485,9 @@ function DashboardContent() {
   };
 
   return (
-    // 한글 주석: 문제점 2 수정 - 고정폭(maxWidth) 해제, width 100% 가변 반응형 대시보드 캔버스 세팅
-    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '32px 24px', boxSizing: 'border-box', width: '100%' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', margin: '0' }}>
+    // 한글 주석: 문제점 1 해결 - 고정 가로폭 완전 해제 및 화면 100% 밀착 반응형 구현
+    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '32px', boxSizing: 'border-box', width: '100vw' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%' }}>
         {widgetOrder.map((id) => (
           <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}>
             {renderWidgetContent(id)}
