@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
-import MindMapWidget from './components/MindMapWidget'; // 핵심 로직: 마인드맵 위젯 부품 임포트
+import MindMapWidget from './components/MindMapWidget';
 
 // 파이어베이스 DB 인스턴스 및 라이브러리 메서드 로드
 import { db } from './firebase';
@@ -86,25 +86,34 @@ function DashboardContent() {
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState(null);
 
-  // 기본 목데이터 구성
-  const [tasks, setTasks] = useState([
-    { id: 't1', title: '527mm Enclosure 구조해석 및 압력 검토', stage: 'simulation', progress: 75 },
-    { id: 't2', title: '10-BAY GIS 가스 계통도 CAD 도면 설계', stage: 'design', progress: 40 },
-    { id: 't3', title: 'M30 앵커 볼트 전단 강도 스펙 수립', stage: 'plan', progress: 10 }
-  ]);
+  // 한글 주석: 초기 로드 시 LocalStorage에서 기존 태스크 상태를 불러와 새로고침 초기화 방지
+  const [tasks, setTasks] = useState(() => {
+    const saved = localStorage.getItem('dashboard_tasks');
+    return saved ? JSON.parse(saved) : [
+      { id: 't1', title: '527mm Enclosure 구조해석 및 압력 검토', stage: 'simulation', progress: 75 },
+      { id: 't2', title: '10-BAY GIS 가스 계통도 CAD 도면 설계', stage: 'design', progress: 40 },
+      { id: 't3', title: 'M30 앵커 볼트 전단 강도 스펙 수립', stage: 'plan', progress: 10 }
+    ];
+  });
+  
   const [newTaskTitle, setNewTaskTitle] = useState('');
 
-  // 핵심 로직: widgetOrder 배열에 'mindmap' 식별 키 추가
-  const [widgetOrder, setWidgetOrder] = useState(['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap']);
-  
-  // 핵심 로직: widgetSizes 객체에 mindmap 위젯의 기본 너비와 높이 매핑
-  const [widgetSizes, setWidgetSizes] = useState({
-    clock: { width: 360, height: 260 }, 
-    weather: { width: 320, height: 260 },
-    workflow: { width: 664, height: 340 },
-    calendar: { width: 360, height: 260 },
-    scheduler: { width: 320, height: 260 },
-    mindmap: { width: 360, height: 260 } 
+  // 한글 주석: 초기 로드 시 LocalStorage에서 위젯 정렬 순서 및 레이아웃 사이즈 불러오기
+  const [widgetOrder, setWidgetOrder] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_order');
+    return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
+  });
+
+  const [widgetSizes, setWidgetSizes] = useState(() => {
+    const saved = localStorage.getItem('dashboard_widget_sizes');
+    return saved ? JSON.parse(saved) : {
+      clock: { width: 360, height: 260 }, 
+      weather: { width: 320, height: 260 },
+      workflow: { width: 664, height: 340 },
+      calendar: { width: 360, height: 260 },
+      scheduler: { width: 320, height: 260 },
+      mindmap: { width: 360, height: 260 } 
+    };
   });
 
   const [draggingId, setDraggingId] = useState(null);
@@ -112,7 +121,6 @@ function DashboardContent() {
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
-  // 컴포넌트 마운트 시 Firestore 실시간 리스너 연결
   useEffect(() => {
     try {
       if (!db) return;
@@ -121,8 +129,14 @@ function DashboardContent() {
       const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
         if (docSnap.exists()) {
           const remoteData = docSnap.data();
-          if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
-          if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
+          if (remoteData?.widgetOrder) {
+            setWidgetOrder(remoteData.widgetOrder);
+            localStorage.setItem('dashboard_widget_order', JSON.stringify(remoteData.widgetOrder));
+          }
+          if (remoteData?.widgetSizes) {
+            setWidgetSizes(remoteData.widgetSizes);
+            localStorage.setItem('dashboard_widget_sizes', JSON.stringify(remoteData.widgetSizes));
+          }
         }
       }, (error) => {
         console.warn("Firestore 레이아웃 접근 제한 우회:", error.message);
@@ -132,6 +146,7 @@ function DashboardContent() {
       const unsubscribeTasks = onSnapshot(tasksRef, (docSnap) => {
         if (docSnap.exists() && docSnap.data()?.list) {
           setTasks(docSnap.data().list);
+          localStorage.setItem('dashboard_tasks', JSON.stringify(docSnap.data().list));
         }
       }, (error) => {
         console.warn("Firestore 태스크 접근 제한 우회:", error.message);
@@ -147,6 +162,8 @@ function DashboardContent() {
   }, []);
 
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
+    localStorage.setItem('dashboard_widget_order', JSON.stringify(newOrder));
+    localStorage.setItem('dashboard_widget_sizes', JSON.stringify(newSizes));
     try {
       if (!db) return;
       await setDoc(doc(db, "dashboard", "layoutConfig"), {
@@ -159,6 +176,7 @@ function DashboardContent() {
   };
 
   const saveTasksToFirestore = async (newTaskList) => {
+    localStorage.setItem('dashboard_tasks', JSON.stringify(newTaskList));
     try {
       if (!db) return;
       await setDoc(doc(db, "dashboard", "taskData"), { list: newTaskList });
@@ -204,13 +222,14 @@ function DashboardContent() {
       const deltaX = e.clientX - startPos.x;
       const deltaY = e.clientY - startPos.y;
       
-      setWidgetSizes((prev) => ({
-        ...prev,
+      const updatedSizes = {
+        ...widgetSizes,
         [resizeTarget]: {
           width: Math.max(260, startSize.width + deltaX),
           height: Math.max(220, startSize.height + deltaY)
         }
-      }));
+      };
+      setWidgetSizes(updatedSizes);
     };
 
     const stopResize = () => {
@@ -432,17 +451,17 @@ function DashboardContent() {
           </div>
         );
       case 'mindmap':
-        // 핵심 로직: 새 카테고리 맵으로 매핑된 mindmap 식별자 호출 시 마인드맵 부품 출력
         return <MindMapWidget />;
       default: return null;
     }
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '32px 24px', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+    // 한글 주석: 문제점 2 수정 - 고정폭(maxWidth) 해제, width 100% 가변 반응형 대시보드 캔버스 세팅
+    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '32px 24px', boxSizing: 'border-box', width: '100%' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', margin: '0' }}>
         {widgetOrder.map((id) => (
-          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id].width}px`, height: `${widgetSizes[id].height}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}>
+          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}>
             {renderWidgetContent(id)}
             <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
           </div>
