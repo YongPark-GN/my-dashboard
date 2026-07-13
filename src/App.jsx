@@ -1,18 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
-// 각 독립 컴포넌트 호출
 import ClockWidget from './components/ClockWidget';
 import WeatherWidget from './components/WeatherWidget';
 import WorkflowWidget from './components/WorkflowWidget';
 import SchedulerWidget from './components/SchedulerWidget';
 import MindMapWidget from './components/MindMapWidget';
 
-import { db } from './firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { useEffect } from 'react';
+import { db, auth, googleProvider } from './firebase';
+import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 
 const iosLiquidGlassTheme = `
   * { margin: 0 !important; box-sizing: border-box !important; }
@@ -46,7 +45,7 @@ const iosLiquidGlassWidget = {
   boxSizing: 'border-box', overflow: 'hidden', position: 'relative', cursor: 'grab'
 };
 
-function DashboardContent() {
+function DashboardContent({ userId, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -54,17 +53,15 @@ function DashboardContent() {
 
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState(null);
-  
-  // 국문 주석: App.jsx는 UI 중개 역할만 수행하도록 로직 위임 구조 고도화
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
 
   const [widgetOrder, setWidgetOrder] = useState(() => {
-    const saved = localStorage.getItem('dashboard_widget_order');
+    const saved = localStorage.getItem(`order_${userId}`);
     return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
   });
 
   const [widgetSizes, setWidgetSizes] = useState(() => {
-    const saved = localStorage.getItem('dashboard_widget_sizes');
+    const saved = localStorage.getItem(`sizes_${userId}`);
     return saved ? JSON.parse(saved) : {
       clock: { width: 360, height: 260 }, weather: { width: 320, height: 260 },
       workflow: { width: 664, height: 340 }, calendar: { width: 360, height: 260 },
@@ -78,24 +75,25 @@ function DashboardContent() {
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    try {
-      if (!db) return;
-      const layoutConfigRef = doc(db, "dashboard", "layoutConfig");
-      const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const remoteData = docSnap.data();
-          if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
-          if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
-        }
-      });
-      return () => unsubscribeLayout();
-    } catch (e) { console.error(e); }
-  }, []);
+    if (!db) return;
+    // 핵심 로직: 유저 고유 ID(UID) 기반으로 경로 분리 조회
+    const layoutConfigRef = doc(db, "users", userId, "dashboard", "layoutConfig");
+    const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const remoteData = docSnap.data();
+        if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
+        if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
+      }
+    });
+    return () => unsubscribeLayout();
+  }, [userId]);
 
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
+    localStorage.setItem(`order_${userId}`, JSON.stringify(newOrder));
+    localStorage.setItem(`sizes_${userId}`, JSON.stringify(newSizes));
     try {
       if (!db) return;
-      await setDoc(doc(db, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true });
+      await setDoc(doc(db, "users", userId, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true });
     } catch (err) { console.error(err); }
   };
 
@@ -152,9 +150,7 @@ function DashboardContent() {
   const handleFormSubmit = (e) => {
     e.preventDefault();
     if (!inputModal.text.trim()) return;
-    if (inputModal.onSubmit) {
-      inputModal.onSubmit(inputModal.text);
-    }
+    if (inputModal.onSubmit) inputModal.onSubmit(inputModal.text);
     setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
   };
 
@@ -162,27 +158,22 @@ function DashboardContent() {
     switch (id) {
       case 'clock': return <ClockWidget />;
       case 'weather': return <WeatherWidget />;
-      case 'workflow': return <WorkflowWidget />;
+      case 'workflow': return <WorkflowWidget userId={userId} />;
       case 'calendar': return <Calendar onChange={setSelectedDate} value={selectedDate} calendarType="gregory" tileClassName={({ date, view }) => view === 'month' ? (date.getDay() === 6 ? 'sat-tile' : date.getDay() === 0 ? 'sun-tile' : null) : null} formatDay={(locale, d) => d.getDate().toString()} />;
       case 'scheduler': return <SchedulerWidget isLoggedIn={isLoggedIn} login={login} events={events} selectedDate={selectedDate} />;
-      case 'mindmap': return <MindMapWidget onSelectMap={(map) => { setSelectedMapId(map.id); setIsMindMapOpen(true); }} />;
+      case 'mindmap': return <MindMapWidget userId={userId} onSelectMap={(map) => { setSelectedMapId(map.id); setIsMindMapOpen(true); }} />;
       default: return null;
     }
   };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
+      {/* 로그아웃 버튼 */}
+      <button onClick={onLogout} style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.8rem' }}>로그아웃</button>
+      
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start', marginTop: '40px' }}>
         {widgetOrder.map((id) => (
-          <div 
-            key={id} 
-            draggable={!resizeTarget} 
-            onDragStart={() => handleDragStart(id)} 
-            onDragOver={handleDragOver} 
-            onDrop={() => handleDrop(id)} 
-            onDragEnd={handleDragEnd} 
-            style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}
-          >
+          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}>
             {renderWidgetContent(id)}
             <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
           </div>
@@ -196,11 +187,7 @@ function DashboardContent() {
             <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 16px', borderRadius: '10px', cursor: 'pointer' }}>닫기</button>
           </div>
           <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', position: 'relative', overflow: 'hidden' }}>
-            <MindMapWidget 
-              isEditorMode={true} 
-              selectedMapId={selectedMapId} 
-              openModal={(config) => setInputModal({ isOpen: true, ...config })}
-            />
+            <MindMapWidget userId={userId} isEditorMode={true} selectedMapId={selectedMapId} openModal={(config) => setInputModal({ isOpen: true, ...config })} />
           </div>
         </div>
       )}
@@ -221,10 +208,36 @@ function DashboardContent() {
   );
 }
 
+// 핵심 로직: 앱 최상단 진입점 분리(로그인 체크)
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', color: '#fff' }}>로딩 중...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+        <button onClick={() => signInWithPopup(auth, googleProvider)} style={{ padding: '14px 24px', fontSize: '1rem', fontWeight: '600', borderRadius: '16px', background: '#007aff', color: '#fff', border: 'none', cursor: 'pointer' }}>
+          Google 계정으로 로그인 (DB 접근)
+        </button>
+      </div>
+    );
+  }
+
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
-      <DashboardContent />
+      <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
     </GoogleOAuthProvider>
   );
 }
