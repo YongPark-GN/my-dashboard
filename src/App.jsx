@@ -52,10 +52,9 @@ function DashboardContent() {
   const [accessToken, setAccessToken] = useState('');
 
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
-  const [currentMindMap, setCurrentMindMap] = useState(null);
-  const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add' });
+  const [selectedMapId, setSelectedMapId] = useState(null); // 수정 logic: 무거운 객체 대신 ID만 추적하여 충돌 차단
+  const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', currentNodes: [], currentEdges: [] });
 
-  // 코드 핵심 복구: LocalStorage 백업 데이터를 기본값으로 할당하여 안정성 극대화
   const [widgetOrder, setWidgetOrder] = useState(() => {
     const saved = localStorage.getItem('dashboard_widget_order');
     return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
@@ -75,7 +74,6 @@ function DashboardContent() {
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
-  // 한글 주석: 위젯 드래그 배치 상태 정보를 Firestore 원격 서버와 완벽 연동
   useEffect(() => {
     try {
       if (!db) return;
@@ -83,38 +81,21 @@ function DashboardContent() {
       const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
         if (docSnap.exists()) {
           const remoteData = docSnap.data();
-          if (remoteData?.widgetOrder) {
-            setWidgetOrder(remoteData.widgetOrder);
-            localStorage.setItem('dashboard_widget_order', JSON.stringify(remoteData.widgetOrder));
-          }
-          if (remoteData?.widgetSizes) {
-            setWidgetSizes(remoteData.widgetSizes);
-            localStorage.setItem('dashboard_widget_sizes', JSON.stringify(remoteData.widgetSizes));
-          }
+          if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
+          if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
         }
       });
       return () => unsubscribeLayout();
     } catch (e) { console.error(e); }
   }, []);
 
-  useEffect(() => {
-    if (!isMindMapOpen || !currentMindMap?.id) return;
-    const unsubscribe = onSnapshot(doc(db, 'mindmaps', currentMindMap.id), (docSnap) => {
-      if (docSnap.exists()) setCurrentMindMap({ id: docSnap.id, ...docSnap.data() });
-    });
-    return () => unsubscribe();
-  }, [isMindMapOpen]);
-
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
-    localStorage.setItem('dashboard_widget_order', JSON.stringify(newOrder));
-    localStorage.setItem('dashboard_widget_sizes', JSON.stringify(newSizes));
     try {
       if (!db) return;
       await setDoc(doc(db, "dashboard", "layoutConfig"), { widgetOrder: newOrder, widgetSizes: newSizes }, { merge: true });
     } catch (err) { console.error(err); }
   };
 
-  // 한글 주석: 위젯 이동(드래그앤드롭) 파이프라인 제어 엔진 활성화
   const handleDragStart = (id) => { if (!resizeTarget) setDraggingId(id); };
   const handleDragOver = (e) => { e.preventDefault(); };
   const handleDrop = (targetId) => {
@@ -122,15 +103,12 @@ function DashboardContent() {
     const currentOrder = [...widgetOrder];
     const dragIdx = currentOrder.indexOf(draggingId);
     const targetIdx = currentOrder.indexOf(targetId);
-    
     currentOrder[dragIdx] = targetId;
     currentOrder[targetIdx] = draggingId;
-    
     setWidgetOrder(currentOrder);
     setDraggingId(null);
     saveLayoutToFirestore(currentOrder, widgetSizes); 
   };
-  const handleDragEnd = () => { setDraggingId(null); };
 
   const initResize = (e, id) => {
     e.preventDefault(); e.stopPropagation();
@@ -142,12 +120,10 @@ function DashboardContent() {
   useEffect(() => {
     const doResize = (e) => {
       if (!resizeTarget) return;
-      const deltaX = e.clientX - startPos.x;
-      const deltaY = e.clientY - startPos.y;
-      setWidgetSizes(prev => {
-        const next = { ...prev, [resizeTarget]: { width: Math.max(260, startSize.width + deltaX), height: Math.max(220, startSize.height + deltaY) } };
-        return next;
-      });
+      setWidgetSizes(prev => ({
+        ...prev,
+        [resizeTarget]: { width: Math.max(260, startSize.width + (e.clientX - startPos.x)), height: Math.max(220, startSize.height + (e.clientY - startPos.y)) }
+      }));
     };
     const stopResize = () => {
       if (resizeTarget) saveLayoutToFirestore(widgetOrder, widgetSizes);
@@ -168,29 +144,49 @@ function DashboardContent() {
     scope: 'https://www.googleapis.com/auth/calendar.readonly'
   });
 
+  // 코드 핵심 logic: 자식(MindMapWidget)이 던져준 순수 노드 배열을 기반으로 새 블록 계산 및 스키마 유실 자동 방어
   const submitNodeData = async (e) => {
     if (e) e.preventDefault();
-    if (!inputModal.text.trim() || !currentMindMap) return;
+    if (!inputModal.text.trim() || !selectedMapId) return;
+
     try {
-      const docRef = doc(db, 'mindmaps', currentMindMap.id);
+      const docRef = doc(db, 'mindmaps', selectedMapId);
+      const safeNodes = inputModal.currentNodes.length > 0 ? inputModal.currentNodes : [{ id: 'root', text: "중심 노드", x: 150, y: 300 }];
+      const safeEdges = inputModal.currentEdges || [];
+
       if (inputModal.mode === 'add') {
-        const parentNode = currentMindMap.nodes.find(n => n.id === inputModal.nodeId);
+        const parentNode = safeNodes.find(n => n.id === inputModal.nodeId);
         const newId = `node_${Date.now()}`;
-        const childCount = currentMindMap.edges ? currentMindMap.edges.filter(edge => edge.source === inputModal.nodeId).length : 0;
+        const childCount = safeEdges.filter(edge => edge.source === inputModal.nodeId).length;
         const offsetMultiplier = childCount % 2 === 0 ? 1 : -1;
-        const newNode = { id: newId, text: inputModal.text, x: (parentNode?.x || 150) + 240, y: (parentNode?.y || 300) + (Math.ceil(childCount / 2) * 80 * offsetMultiplier) };
-        await updateDoc(docRef, { nodes: [...currentMindMap.nodes, newNode], edges: [...(currentMindMap.edges || []), { id: `e_${inputModal.nodeId}_${newId}`, source: inputModal.nodeId, target: newId }] });
+        
+        const newNode = {
+          id: newId,
+          text: inputModal.text,
+          x: (parentNode?.x || 150) + 240,
+          y: (parentNode?.y || 300) + (Math.ceil(childCount / 2) * 80 * offsetMultiplier)
+        };
+        const newEdge = { id: `e_${inputModal.nodeId}_${newId}`, source: inputModal.nodeId, target: newId };
+
+        await updateDoc(docRef, {
+          nodes: [...safeNodes, newNode],
+          edges: [...safeEdges, newEdge]
+        });
       } else if (inputModal.mode === 'edit') {
-        await updateDoc(docRef, { nodes: currentMindMap.nodes.map(n => n.id === inputModal.nodeId ? { ...n, text: inputModal.text } : n) });
+        const updated = safeNodes.map(n => n.id === inputModal.nodeId ? { ...n, text: inputModal.text } : n);
+        await updateDoc(docRef, { nodes: updated });
       }
-      setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add' });
+      setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', currentNodes: [], currentEdges: [] });
     } catch (err) { console.error(err); }
   };
 
-  const handleDeleteNode = async (nodeId) => {
+  const handleDeleteNode = async (nodeId, currentNodes, currentEdges) => {
     if (nodeId === 'root') return alert('중심 블록 금지');
     if (!confirm('삭제?')) return;
-    await updateDoc(doc(db, 'mindmaps', currentMindMap.id), { nodes: currentMindMap.nodes.filter(n => n.id !== nodeId), edges: currentMindMap.edges.filter(e => e.source !== nodeId && e.target !== nodeId) });
+    await updateDoc(doc(db, 'mindmaps', selectedMapId), { 
+      nodes: currentNodes.filter(n => n.id !== nodeId), 
+      edges: currentEdges.filter(e => e.source !== nodeId && e.target !== nodeId) 
+    });
   };
 
   const renderWidgetContent = (id) => {
@@ -200,7 +196,7 @@ function DashboardContent() {
       case 'workflow': return <WorkflowWidget />;
       case 'calendar': return <Calendar onChange={setSelectedDate} value={selectedDate} calendarType="gregory" tileClassName={({ date, view }) => view === 'month' ? (date.getDay() === 6 ? 'sat-tile' : date.getDay() === 0 ? 'sun-tile' : null) : null} formatDay={(locale, d) => d.getDate().toString()} />;
       case 'scheduler': return <SchedulerWidget isLoggedIn={isLoggedIn} login={login} events={events} selectedDate={selectedDate} />;
-      case 'mindmap': return <MindMapWidget onSelectMap={(map) => { setCurrentMindMap(map); setIsMindMapOpen(true); }} />;
+      case 'mindmap': return <MindMapWidget onSelectMap={(map) => { setSelectedMapId(map.id); setIsMindMapOpen(true); }} />;
       default: return null;
     }
   };
@@ -209,22 +205,41 @@ function DashboardContent() {
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start' }}>
         {widgetOrder.map((id) => (
-          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1, transform: draggingId && draggingId !== id ? 'scale(0.97)' : 'scale(1)' }}>
+          <div key={id} draggable={!resizeTarget} onDragStart={() => handleDragStart(id)} onDragOver={handleDragOver} onDrop={() => handleDrop(id)} onDragEnd={handleDragEnd} style={{ ...iosLiquidGlassWidget, width: `${widgetSizes[id]?.width || 320}px`, height: `${widgetSizes[id]?.height || 260}px`, opacity: draggingId === id ? 0.3 : 1 }}>
             {renderWidgetContent(id)}
             <div className="ios-resize-trigger" onMouseDown={(e) => initResize(e, id)} />
           </div>
         ))}
       </div>
 
-      {isMindMapOpen && currentMindMap && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', display: 'flex', flexDirection: 'column' }}>
+      {isMindMapOpen && selectedMapId && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '600', color: '#007aff' }}>{currentMindMap.title} (마인드맵 편집기)</h2>
-            <button onClick={() => setIsMindMapOpen(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 16px', borderRadius: '10px', cursor: 'pointer' }}>닫기</button>
+            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: '600', color: '#007aff' }}>마인드맵 편집기</h2>
+            <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '6px 16px', borderRadius: '10px', cursor: 'pointer' }}>닫기</button>
           </div>
           <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', position: 'relative', overflow: 'hidden' }}>
-            <MindMapWidget isEditorMode={true} currentMap={currentMindMap} onAddNodeClick={(parentId) => setInputModal({ isOpen: true, nodeId: parentId, text: '', mode: 'add' })} onEditNodeClick={(nodeId, text) => setInputModal({ isOpen: true, nodeId: nodeId, text: text, mode: 'edit' })} onDeleteNodeClick={handleDeleteNode} />
+            <MindMapWidget 
+              isEditorMode={true} 
+              selectedMapId={selectedMapId} 
+              onAddNodeClick={(parentId, currentNodes, currentEdges) => setInputModal({ isOpen: true, nodeId: parentId, text: '', mode: 'add', currentNodes, currentEdges })} 
+              onEditNodeClick={(nodeId, text, currentNodes) => setInputModal({ isOpen: true, nodeId: nodeId, text: text, mode: 'edit', currentNodes, currentEdges: [] })} 
+              onDeleteNodeClick={handleDeleteNode} 
+            />
           </div>
+        </div>
+      )}
+
+      {inputModal.isOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <form onSubmit={submitNodeData} style={{ background: 'linear-gradient(135deg, rgba(44, 44, 48, 0.95) 0%, rgba(28, 28, 30, 0.98) 100%)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '24px', padding: '24px', width: '320px', color: '#fff' }}>
+            <h4 style={{ margin: '0 0 16px 0', fontSize: '1rem', color: '#007aff' }}>{inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}</h4>
+            <input type="text" value={inputModal.text} onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })} autoFocus style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px', color: '#fff', outline: 'none', marginBottom: '16px' }} />
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', currentNodes: [], currentEdges: [] })} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>취소</button>
+              <button type="submit" style={{ background: '#007aff', border: 'none', color: '#fff', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer' }}>확인</button>
+            </div>
+          </form>
         </div>
       )}
     </div>
