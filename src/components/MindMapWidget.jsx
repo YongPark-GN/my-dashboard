@@ -21,7 +21,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     return () => unsubscribe();
   }, [isEditorMode]);
 
-  // 한글 주석: 겹침 버그 파괴 - 자식 노드 개수와 트리 깊이에 따라 노드들의 화면 좌표를 이쁘게 분산 배치하는 자동 레이아웃 알고리즘
+  // 한글 주석: 자식 노드 간격 분산 자동 정렬 알고리즘
   const calculateAutoLayout = (nodes = [], edges = []) => {
     if (nodes.length === 0) return [];
     
@@ -40,15 +40,14 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
 
     if (!rootNode) rootNode = nodeMap.get(nodes[0].id);
 
-    // 가상의 캔버스 기준 중앙 좌표 배치
     const startX = 150;
     const startY = 300;
     
     rootNode.x = startX;
     rootNode.y = startY;
 
-    const levelWidth = 240; // 노드 간 가로 간격 스펙 격차 수립
-    const nodeHeight = 70;  // 겹침 방지 최소 세로 임계 구역 스펙
+    const levelWidth = 240; 
+    const nodeHeight = 70;  
 
     const assignPositions = (node, currentX, depth) => {
       if (!node.children || node.children.length === 0) return;
@@ -92,7 +91,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     }
   };
 
-  // 한글 주석: 드래그 마우스 제어 핸들러 파이프라인 빌드
+  // 드래그 제어 핸들러
   const handleNodeMouseDown = (e, node) => {
     e.stopPropagation();
     const targetNode = autoLayoutNodes.find(n => n.id === node.id) || node;
@@ -109,8 +108,8 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
   const handleContainerMouseMove = (e) => {
     if (!dragState.isDragging || !isEditorMode) return;
     
-    const deltaX = e.clientX - dragState.startX;
-    const deltaY = e.clientY - dragState.startY;
+    const deltaX = e.clientX - startPos.x;
+    const deltaY = e.clientY - startPos.y;
 
     const updatedNodes = currentMap.nodes.map(n => {
       if (n.id === dragState.nodeId) {
@@ -119,7 +118,6 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
       return n;
     });
 
-    // 화면 부드러운 드래그 연동을 위한 로컬 세팅 (원격 저장은 성능 효율을 위해 마우스 업 시점에 단 1회 수행)
     currentMap.nodes = updatedNodes;
   };
 
@@ -130,7 +128,6 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     setDragState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialNodeX: 0, initialNodeY: 0 });
   };
 
-  // 대시보드 사이드바/위젯 뷰 렌더링 모드
   if (!isEditorMode) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
@@ -166,7 +163,6 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
     );
   }
 
-  // 팝업 에디터 모드 전용 보드 출력단 (선 연결 및 노드 배치 캔버스 구조)
   return (
     <div 
       ref={containerRef}
@@ -174,14 +170,12 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
       onMouseUp={handleNodeMouseUp}
       style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', cursor: dragState.isDragging ? 'grabbing' : 'default' }}
     >
-      {/* 한글 주석: 블록끼리 곡선으로 이어주는 SVG 드로잉 벡터 엔진 탑재 */}
       <svg style={{ position: 'absolute', top: 0, left: 0, width: '2000px', height: '2000px', pointerEvents: 'none', zIndex: 0 }}>
         {currentMap.edges?.map((edge) => {
           const sourceNode = autoLayoutNodes.find(n => n.id === edge.source);
           const targetNode = autoLayoutNodes.find(n => n.id === edge.target);
           if (!sourceNode || !targetNode) return null;
 
-          // 시작 블록 오른쪽 중심에서 끝 블록 왼쪽 중심까지 곡선 연산 적용
           const sX = sourceNode.x + 120;
           const sY = sourceNode.y + 20;
           const tX = targetNode.x;
@@ -203,7 +197,6 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
         })}
       </svg>
 
-      {/* 노드 블록 출력 파이프라인 */}
       {autoLayoutNodes.map((node) => (
         <div 
           key={node.id}
@@ -226,6 +219,7 @@ export default function MindMapWidget({ onSelectMap, isEditorMode, currentMap, o
             </button>
             {node.id !== 'root' && (
               <button 
+                // 핵심 수정: 부모로부터 상속받은 프로퍼티명인 onDeleteNodeClick으로 매핑을 정확히 일치시켜 에러 폭파
                 onClick={(e) => { e.stopPropagation(); onDeleteNodeClick(node.id); }} 
                 style={{ width: '18px', height: '18px', background: '#ff3b30', border: 'none', borderRadius: '4px', color: '#fff', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
