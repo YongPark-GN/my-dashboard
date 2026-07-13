@@ -3,7 +3,6 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
-// 각 독립 컴포넌트 호출
 import ClockWidget from './components/ClockWidget';
 import WeatherWidget from './components/WeatherWidget';
 import WorkflowWidget from './components/WorkflowWidget';
@@ -46,11 +45,7 @@ const iosLiquidGlassWidget = {
   boxSizing: 'border-box', overflow: 'hidden', position: 'relative', cursor: 'grab'
 };
 
-function DashboardContent() {
-  // auth.currentUser에서 직접 안전하게 uid 추출
-  const userId = auth.currentUser?.uid;
-  const onLogout = () => signOut(auth);
-
+function DashboardContent({ userId, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -81,7 +76,6 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!db || !userId) return;
-    // 핵심 수정 로직: 권한 오류를 유발하던 루트 경로를 유저별 차단 규격 경로로 완전 정정
     const layoutConfigRef = doc(db, "users", userId, "dashboard", "layoutConfig");
     const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -239,9 +233,10 @@ export default function App() {
     );
   }
 
+  // 국문 주석: 자식 컴포넌트들에게 확정된 user.uid 값을 주입하도록 아키텍처 결속
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
-      <DashboardContent />
+      <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
     </GoogleOAuthProvider>
   );
 }
