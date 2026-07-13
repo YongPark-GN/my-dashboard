@@ -34,7 +34,8 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists() && !dragState.isDragging) {
         const rawData = docSnap.data();
-        setEditorNodes(rawData.nodes || [{ id: 'root', text: rawData.title || "중심 노드", x: 150, y: 300 }]);
+        // 핵심 주석: 기존 데이터가 없거나 첫 로드 시 4,000px 캔버스의 정중앙(1920, 1980)에서 시작되도록 분기
+        setEditorNodes(rawData.nodes || [{ id: 'root', text: rawData.title || "중심 노드", x: 1920, y: 1980 }]);
         setEditorEdges(rawData.edges || []);
       }
     }, (err) => {
@@ -43,36 +44,40 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     return () => unsubscribe();
   }, [selectedMapId, isEditorMode, dragState.isDragging, userId]);
 
+  // 핵심 주석: 마인드맵 에디터 페이지가 열릴 때 스크롤바 위치를 4,000px 화폭의 정중앙으로 자동 스냅하는 로직
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !isEditorMode) return;
-
-    const handleWheel = (e) => {
-      e.preventDefault(); 
-      const zoomFactor = 0.05;
-      setZoom(prev => Math.min(Math.max(prev + (e.deltaY < 0 ? zoomFactor : -zoomFactor), 0.3), 2.0));
-    };
-
-    container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
-  }, [isEditorMode]);
+    if (isEditorMode && selectedMapId) {
+      setTimeout(() => {
+        if (containerRef.current) {
+          const container = containerRef.current;
+          // 4,000px 화폭 중심(2000px)에서 현재 브라우저 창의 절반 크기를 빼서 완벽한 뷰포트 중앙 배정
+          container.scrollLeft = 2000 - container.clientWidth / 2;
+          container.scrollTop = 2000 - container.clientHeight / 2;
+        }
+      }, 80); // DOM이 완벽히 렌더링된 후 계산을 유도하기 위한 마이크로 유예 타임아웃
+    }
+  }, [isEditorMode, selectedMapId]);
 
   const handleCreateMap = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !userId) return;
     
     const mindmapCollection = collection(db, 'users', userId, 'mindmaps');
-    await addDoc(mindmapCollection, { title: newTitle, createdAt: new Date().toISOString(), nodes: [{ id: 'root', text: newTitle, x: 150, y: 300 }], edges: [] });
+    // 핵심 주석: 새 마인드맵 개설 시 최초 시작 중심 노드 위치를 4,000px 화폭의 정중앙인 (x:1920, y:1980)으로 배정
+    await addDoc(mindmapCollection, { 
+      title: newTitle, 
+      createdAt: new Date().toISOString(), 
+      nodes: [{ id: 'root', text: newTitle, x: 1920, y: 1980 }], 
+      edges: [] 
+    });
     setNewTitle('');
   };
 
-  // 핵심 로직: 영구 삭제를 실행하기 전 팝업을 띄워 유저에게 취소 기회를 주는 확인 가드 기능
   const handleDeleteMap = async (mapId) => {
     if (!userId) return;
     
-    // 핵심 로직: 대화상자를 노출하여 취소 선택 시 함수를 조기 종료해 안전성 확보
     const confirmDelete = confirm("이 마인드맵을 정말로 삭제하시겠습니까?\n[취소]를 누르면 삭제가 철회되고 보존됩니다.");
-    if (!confirmDelete) return; // 취소를 선택했을 경우 뒤에 오는 Firestore 삭제 구문 실행을 차단
+    if (!confirmDelete) return; 
     
     try {
       await deleteDoc(doc(db, 'users', userId, 'mindmaps', mapId));
@@ -144,7 +149,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
       const newId = `node_${Date.now()}`;
       const childCount = editorEdges.filter(edge => edge.source === parentId).length;
       const offsetMultiplier = childCount % 2 === 0 ? 1 : -1;
-      const newNode = { id: newId, text: text, x: (parentNode?.x || 150) + 240, y: (parentNode?.y || 300) + (Math.ceil(childCount / 2) * 85 * offsetMultiplier) };
+      const newNode = { id: newId, text: text, x: (parentNode?.x || 1920) + 240, y: (parentNode?.y || 1980) + (Math.ceil(childCount / 2) * 85 * offsetMultiplier) };
       const newEdge = { id: `e_${parentId}_${newId}`, source: parentId, target: newId };
       await updateDoc(doc(db, 'users', userId, 'mindmaps', selectedMapId), { nodes: [...editorNodes, newNode], edges: [...editorEdges, newEdge] });
     }});
@@ -190,8 +195,18 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   return (
     <div ref={containerRef} onMouseMove={handleContainerMouseMove} onMouseUp={handleNodeMouseUp} onMouseLeave={handleNodeMouseUp} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', background: '#111115' }}>
       
-      <div style={{ position: 'fixed', top: '100px', right: '60px', zIndex: 10000, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)', padding: '6px 12px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: '600', border: '1px solid rgba(255,255,255,0.1)' }}>
-        🔍 배율: {Math.round(zoom * 100)}%
+      {/* 핵심 주석: 우측 아래 배치된 전용 줌 제어용 슬라이더 컨트롤러 바 (배율 수치 안내 텍스트 완전 제외) */}
+      <div style={{ position: 'fixed', bottom: '40px', right: '40px', zIndex: 10000, background: 'linear-gradient(135deg, rgba(30,30,35,0.85) 0%, rgba(15,15,18,0.9) 100%)', backdropFilter: 'blur(20px)', padding: '10px 18px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#007aff', letterSpacing: '-0.3px' }}>ZOOM</span>
+        <input 
+          type="range" 
+          min="0.3" 
+          max="2.0" 
+          step="0.05" 
+          value={zoom} 
+          onChange={(e) => setZoom(parseFloat(e.target.value))} 
+          style={{ width: '110px', height: '4px', cursor: 'pointer', accentColor: '#007aff' }}
+        />
       </div>
 
       <div style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: '4000px', height: '4000px', position: 'relative' }}>
