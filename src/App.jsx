@@ -3,6 +3,7 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; 
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
+// 각 독립 컴포넌트 호출
 import ClockWidget from './components/ClockWidget';
 import WeatherWidget from './components/WeatherWidget';
 import WorkflowWidget from './components/WorkflowWidget';
@@ -10,7 +11,7 @@ import SchedulerWidget from './components/SchedulerWidget';
 import MindMapWidget from './components/MindMapWidget';
 
 import { db, auth, googleProvider } from './firebase';
-import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 
 const iosLiquidGlassTheme = `
@@ -45,7 +46,11 @@ const iosLiquidGlassWidget = {
   boxSizing: 'border-box', overflow: 'hidden', position: 'relative', cursor: 'grab'
 };
 
-function DashboardContent({ userId, onLogout }) {
+function DashboardContent() {
+  // auth.currentUser에서 직접 안전하게 uid 추출
+  const userId = auth.currentUser?.uid;
+  const onLogout = () => signOut(auth);
+
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -75,8 +80,8 @@ function DashboardContent({ userId, onLogout }) {
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    if (!db) return;
-    // 핵심 로직: 유저 고유 ID(UID) 기반으로 경로 분리 조회
+    if (!db || !userId) return;
+    // 핵심 수정 로직: 권한 오류를 유발하던 루트 경로를 유저별 차단 규격 경로로 완전 정정
     const layoutConfigRef = doc(db, "users", userId, "dashboard", "layoutConfig");
     const unsubscribeLayout = onSnapshot(layoutConfigRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -89,6 +94,7 @@ function DashboardContent({ userId, onLogout }) {
   }, [userId]);
 
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
+    if (!userId) return;
     localStorage.setItem(`order_${userId}`, JSON.stringify(newOrder));
     localStorage.setItem(`sizes_${userId}`, JSON.stringify(newSizes));
     try {
@@ -168,7 +174,6 @@ function DashboardContent({ userId, onLogout }) {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '24px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
-      {/* 로그아웃 버튼 */}
       <button onClick={onLogout} style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 100, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.8rem' }}>로그아웃</button>
       
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', width: '100%', justifyContent: 'flex-start', alignItems: 'flex-start', marginTop: '40px' }}>
@@ -208,7 +213,6 @@ function DashboardContent({ userId, onLogout }) {
   );
 }
 
-// 핵심 로직: 앱 최상단 진입점 분리(로그인 체크)
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -237,7 +241,7 @@ export default function App() {
 
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
-      <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
+      <DashboardContent />
     </GoogleOAuthProvider>
   );
 }
