@@ -34,7 +34,6 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists() && !dragState.isDragging) {
         const rawData = docSnap.data();
-        // 핵심 주석: 기존 데이터가 없거나 첫 로드 시 4,000px 캔버스의 정중앙(1920, 1980)에서 시작되도록 분기
         setEditorNodes(rawData.nodes || [{ id: 'root', text: rawData.title || "중심 노드", x: 1920, y: 1980 }]);
         setEditorEdges(rawData.edges || []);
       }
@@ -44,17 +43,15 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     return () => unsubscribe();
   }, [selectedMapId, isEditorMode, dragState.isDragging, userId]);
 
-  // 핵심 주석: 마인드맵 에디터 페이지가 열릴 때 스크롤바 위치를 4,000px 화폭의 정중앙으로 자동 스냅하는 로직
   useEffect(() => {
     if (isEditorMode && selectedMapId) {
       setTimeout(() => {
         if (containerRef.current) {
           const container = containerRef.current;
-          // 4,000px 화폭 중심(2000px)에서 현재 브라우저 창의 절반 크기를 빼서 완벽한 뷰포트 중앙 배정
           container.scrollLeft = 2000 - container.clientWidth / 2;
           container.scrollTop = 2000 - container.clientHeight / 2;
         }
-      }, 80); // DOM이 완벽히 렌더링된 후 계산을 유도하기 위한 마이크로 유예 타임아웃
+      }, 80); 
     }
   }, [isEditorMode, selectedMapId]);
 
@@ -63,7 +60,6 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     if (!newTitle.trim() || !userId) return;
     
     const mindmapCollection = collection(db, 'users', userId, 'mindmaps');
-    // 핵심 주석: 새 마인드맵 개설 시 최초 시작 중심 노드 위치를 4,000px 화폭의 정중앙인 (x:1920, y:1980)으로 배정
     await addDoc(mindmapCollection, { 
       title: newTitle, 
       createdAt: new Date().toISOString(), 
@@ -195,7 +191,6 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   return (
     <div ref={containerRef} onMouseMove={handleContainerMouseMove} onMouseUp={handleNodeMouseUp} onMouseLeave={handleNodeMouseUp} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', background: '#111115' }}>
       
-      {/* 핵심 주석: 우측 아래 배치된 전용 줌 제어용 슬라이더 컨트롤러 바 (배율 수치 안내 텍스트 완전 제외) */}
       <div style={{ position: 'fixed', bottom: '40px', right: '40px', zIndex: 10000, background: 'linear-gradient(135deg, rgba(30,30,35,0.85) 0%, rgba(15,15,18,0.9) 100%)', backdropFilter: 'blur(20px)', padding: '10px 18px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#007aff', letterSpacing: '-0.3px' }}>ZOOM</span>
         <input 
@@ -209,7 +204,8 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
         />
       </div>
 
-      <div style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: '4000px', height: '4000px', position: 'relative' }}>
+      {/* 핵심 로직: transformOrigin 주소를 기존 0 0에서 메인 루트 블록 정중앙인 2000px 2000px로 변경하여 줌 초점을 중앙에 바인딩 */}
+      <div style={{ transform: `scale(${zoom})`, transformOrigin: '2000px 2000px', width: '4000px', height: '4000px', position: 'relative' }}>
         <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0 }}>
           {editorEdges?.map((edge) => {
             const sourceNode = editorNodes.find(n => n.id === edge.source); const targetNode = editorNodes.find(n => n.id === edge.target);
