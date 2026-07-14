@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom'; // 핵심 로직: 모달 창 렌더링 컨텍스트 분리 및 오버플로우 회피용 리액트 코어 유틸
 import { db } from '../firebase'; 
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'; 
 
@@ -13,7 +14,6 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   const [zoom, setZoom] = useState(1);
   const containerRef = useRef(null);
 
-  // 커스텀 확인/취소 팝업 상태
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, message: '', onConfirm: null });
 
   useEffect(() => {
@@ -92,7 +92,6 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     return { sourcePt: bestSrc, targetPt: bestTgt };
   };
 
-  // 핵심 로직: 마우스 및 터치(갤럭시 탭) 이벤트를 통합 처리하여 조작 호환성 100% 확보
   const handleInteractionStart = (e, node) => {
     if (e.target.tagName === 'BUTTON') return; 
     e.stopPropagation();
@@ -117,7 +116,6 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     try { await updateDoc(doc(db, 'users', userId, 'mindmaps', selectedMapId), { nodes: currentNodesSnapshot }); } catch (err) {}
   };
 
-  // 핵심 로직: 새 블록이 기존 블록과 겹치지 않게 빈 공간을 자동으로 탐색하는 회피 배치 알고리즘
   const internalAddNode = (parentId) => {
     if (!userId) return;
     openModal({ mode: 'add', text: '', nodeId: parentId, onSubmit: async (text) => {
@@ -167,38 +165,39 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     });
   };
 
+  // 핵심 로직: 포탈을 이용해 body 계층으로 모달을 분리 추출
+  const renderConfirmDialog = () => {
+    if (!confirmDialog.isOpen) return null;
+    return createPortal(
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '320px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)', textAlign: 'center' }}>
+          <p style={{ margin: '0 0 24px 0', fontSize: '1rem', color: '#ffffff', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{confirmDialog.message}</p>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button onClick={() => setConfirmDialog({ isOpen: false, message: '', onConfirm: null })} style={{ flex: 1, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>취소</button>
+            <button onClick={() => { if(confirmDialog.onConfirm) confirmDialog.onConfirm(); setConfirmDialog({ isOpen: false, message: '', onConfirm: null }); }} style={{ flex: 1, background: '#ff3b30', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '700' }}>확인</button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
+
   if (!isEditorMode) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px', marginBottom: '16px' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#ff2d55', letterSpacing: '0.5px' }}>CREATIVE</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#ffffff', marginTop: '4px' }}>🧠 마인드맵 위젯</div>
-        </div>
-        <form onSubmit={handleCreateMap} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-          <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="새 마인드맵 제목" style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', fontSize: '0.85rem', color: '#fff', outline: 'none' }} />
-          <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '10px', padding: '0 16px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}>생성</button>
+        <form onSubmit={handleCreateMap} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+          <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="새 마인드맵 제목" style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px', padding: '10px 14px', fontSize: '0.9rem', color: '#fff', outline: 'none' }} />
+          <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '12px', padding: '0 20px', fontSize: '0.9rem', fontWeight: '700', cursor: 'pointer' }}>생성</button>
         </form>
-        <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {mindmaps.map((map) => (
-            <div key={map.id} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 16px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div key={map.id} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px 20px', fontSize: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span onClick={() => onSelectMap(map)} style={{ color: '#ffffff', flex: 1, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '500' }}>{map.title}</span>
-              <button onClick={(e) => { e.stopPropagation(); handleDeleteMap(map.id); }} style={{ background: 'rgba(255,59,48,0.1)', border: 'none', color: '#ff3b30', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', padding: '6px 10px', borderRadius: '8px', marginLeft: '12px', transition: 'background 0.2s' }}>삭제</button>
+              <button onClick={(e) => { e.stopPropagation(); handleDeleteMap(map.id); }} style={{ background: 'rgba(255,59,48,0.15)', border: 'none', color: '#ff3b30', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', padding: '8px 14px', borderRadius: '10px', marginLeft: '16px', transition: 'background 0.2s' }}>삭제</button>
             </div>
           ))}
         </div>
-        
-        {/* 리스트 뷰 커스텀 팝업 */}
-        {confirmDialog.isOpen && (
-          <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '320px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)', textAlign: 'center' }}>
-              <p style={{ margin: '0 0 24px 0', fontSize: '1rem', color: '#ffffff', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{confirmDialog.message}</p>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button onClick={() => setConfirmDialog({ isOpen: false, message: '', onConfirm: null })} style={{ flex: 1, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>취소</button>
-                <button onClick={() => { if(confirmDialog.onConfirm) confirmDialog.onConfirm(); setConfirmDialog({ isOpen: false, message: '', onConfirm: null }); }} style={{ flex: 1, background: '#ff3b30', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '700' }}>확인</button>
-              </div>
-            </div>
-          </div>
-        )}
+        {renderConfirmDialog()}
       </div>
     );
   }
@@ -217,11 +216,8 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
             const sourceNode = editorNodes.find(n => n.id === edge.source); const targetNode = editorNodes.find(n => n.id === edge.target);
             if (!sourceNode || !targetNode) return null;
             const { sourcePt, targetPt } = getBestAnchors(sourceNode, targetNode);
-            
-            // 핵심 로직: 베지에 곡선(C)을 버리고 가독성이 뛰어난 직각 Step 라인(L) 렌더링으로 교체
             const midX = (sourcePt.x + targetPt.x) / 2;
             const orthogonalPath = `M ${sourcePt.x} ${sourcePt.y} L ${midX} ${sourcePt.y} L ${midX} ${targetPt.y} L ${targetPt.x} ${targetPt.y}`;
-            
             return <path key={edge.id} d={orthogonalPath} stroke="rgba(0,122,255,0.7)" strokeWidth="3" fill="none" strokeLinejoin="round" />;
           })}
         </svg>
@@ -230,7 +226,6 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
           const isSelected = dragState.nodeId === node.id;
           return (
             <div key={node.id} id={`mm-node-${node.id}`} onMouseDown={(e) => handleInteractionStart(e, node)} onTouchStart={(e) => handleInteractionStart(e, node)} style={{ position: 'absolute', left: `${node.x || 0}px`, top: `${node.y || 0}px`, minWidth: '180px', maxWidth: '320px', zIndex: isSelected ? 100 : 10, background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', border: isSelected ? '1.5px solid #007aff' : node.id === 'root' ? '1.5px solid rgba(0,122,255,0.5)' : '1px solid rgba(255,255,255,0.18)', boxShadow: isSelected ? '0 0 20px rgba(0, 122, 255, 0.6), 0 10px 30px rgba(0,0,0,0.6)' : '0 10px 24px rgba(0,0,0,0.4)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', userSelect: 'none', cursor: dragState.isDragging ? 'grabbing' : 'grab' }}>
-              {/* whiteSpace 속성으로 textarea에서 받은 줄바꿈 코드를 UI에 그대로 표출 */}
               <span onDoubleClick={() => internalEditNode(node.id, node.text)} style={{ fontSize: '0.9rem', fontWeight: '600', color: '#ffffff', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1, cursor: 'text', lineHeight: '1.4' }}>{node.text}</span>
               <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
                 <button onClick={() => internalAddNode(node.id)} onTouchEnd={(e) => { e.stopPropagation(); internalAddNode(node.id); }} style={{ width: '24px', height: '24px', background: 'rgba(52, 199, 89, 0.2)', border: '1px solid rgba(52, 199, 89, 0.5)', borderRadius: '6px', color: '#34c759', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
@@ -240,19 +235,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
           );
         })}
       </div>
-
-      {/* 에디터 내부 커스텀 팝업 */}
-      {confirmDialog.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '320px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)', textAlign: 'center' }}>
-            <p style={{ margin: '0 0 24px 0', fontSize: '1rem', color: '#ffffff', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{confirmDialog.message}</p>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={() => setConfirmDialog({ isOpen: false, message: '', onConfirm: null })} style={{ flex: 1, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>취소</button>
-              <button onClick={() => { if(confirmDialog.onConfirm) confirmDialog.onConfirm(); setConfirmDialog({ isOpen: false, message: '', onConfirm: null }); }} style={{ flex: 1, background: '#ff3b30', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '700' }}>확인</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderConfirmDialog()}
     </div>
   );
 }

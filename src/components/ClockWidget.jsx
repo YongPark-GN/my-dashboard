@@ -15,20 +15,26 @@ export default function ClockWidget() {
   const seconds = time.getSeconds().toString().padStart(2, '0');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center', boxSizing: 'border-box' }}>
-      <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#007aff', letterSpacing: '2px', marginBottom: '16px' }}>
-        LOCAL TIME
-      </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-        <span style={{ fontSize: '1.6rem', fontWeight: '600', color: 'rgba(255,255,255,0.4)' }}>
-          {isAm ? 'AM' : 'PM'}
-        </span>
-        <span style={{ fontSize: '4.5rem', fontWeight: '200', color: '#ffffff', lineHeight: '1', letterSpacing: '-2px' }}>
+    <div style={{ 
+      display: 'flex', 
+      height: '100%', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      boxSizing: 'border-box',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif' 
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+        <span style={{ fontSize: '4.8rem', fontWeight: '200', color: '#ffffff', lineHeight: '1', letterSpacing: '-1.5px' }}>
           {displayHours}:{minutes}
         </span>
-        <span style={{ fontSize: '1.6rem', fontWeight: '400', color: '#ff2d55' }}>
-          {seconds}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start' }}>
+          <span style={{ fontSize: '1.2rem', fontWeight: '600', color: '#ff2d55', lineHeight: '1', marginBottom: '4px' }}>
+            {seconds}
+          </span>
+          <span style={{ fontSize: '1.2rem', fontWeight: '600', color: 'rgba(255,255,255,0.5)', lineHeight: '1' }}>
+            {isAm ? 'AM' : 'PM'}
+          </span>
+        </div>
       </div>
     </div>
   );
