@@ -184,7 +184,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
 
   if (!isEditorMode) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', width: '100%' }}>
         <form onSubmit={handleCreateMap} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
           <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="새 마인드맵 제목" style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px', padding: '10px 14px', fontSize: '0.9rem', color: '#fff', outline: 'none' }} />
           <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '12px', padding: '0 20px', fontSize: '0.9rem', fontWeight: '700', cursor: 'pointer' }}>생성</button>
