@@ -8,6 +8,7 @@ import WeatherWidget from './components/WeatherWidget';
 import WorkflowWidget from './components/WorkflowWidget';
 import SchedulerWidget from './components/SchedulerWidget';
 import MindMapWidget from './components/MindMapWidget';
+import MemoWidget from './components/MemoWidget';
 
 import { db, auth, googleProvider } from './firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -47,7 +48,6 @@ const iosLiquidGlassWidget = {
 
 function DashboardContent({ userId, onLogout }) {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [events, setEvents] = useState([]);
 
   const [accessToken, setAccessToken] = useState(() => {
     const savedToken = localStorage.getItem(`cal_token_${userId}`);
@@ -64,13 +64,11 @@ function DashboardContent({ userId, onLogout }) {
 
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState(null);
-  
-  // 핵심 로직: 블록 입력 모달 상태
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
 
   const [widgetOrder, setWidgetOrder] = useState(() => {
     const saved = localStorage.getItem(`order_${userId}`);
-    return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'mindmap'];
+    return saved ? JSON.parse(saved) : ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'memo', 'mindmap'];
   });
 
   const [widgetSizes, setWidgetSizes] = useState(() => {
@@ -78,7 +76,8 @@ function DashboardContent({ userId, onLogout }) {
     return saved ? JSON.parse(saved) : {
       clock: { width: 360, height: 260 }, weather: { width: 320, height: 260 },
       workflow: { width: 664, height: 340 }, calendar: { width: 360, height: 260 },
-      scheduler: { width: 320, height: 260 }, mindmap: { width: 360, height: 260 }
+      scheduler: { width: 320, height: 260 }, memo: { width: 320, height: 260 }, 
+      mindmap: { width: 360, height: 260 }
     };
   });
 
@@ -99,37 +98,6 @@ function DashboardContent({ userId, onLogout }) {
     }, (err) => console.warn(err.message));
     return () => unsubscribeLayout();
   }, [userId]);
-
-  useEffect(() => {
-    if (!accessToken) return;
-    const fetchGoogleCalendarEvents = async () => {
-      try {
-        const startOfDay = new Date(selectedDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(selectedDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${startOfDay.toISOString()}&timeMax=${endOfDay.toISOString()}&singleEvents=true&orderBy=startTime`;
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-        const data = await response.json();
-        if (data.error) {
-          if (data.error.code === 401) {
-            localStorage.removeItem(`cal_token_${userId}`);
-            localStorage.removeItem(`cal_expiry_${userId}`);
-            setIsLoggedIn(false); setAccessToken('');
-          }
-          return;
-        }
-        if (data.items) {
-          const formattedEvents = data.items.map(item => ({
-            id: item.id, title: item.summary || '제목 없음',
-            start: item.start.dateTime || item.start.date, end: item.end.dateTime || item.end.date,
-          }));
-          setEvents(formattedEvents);
-        }
-      } catch (err) {}
-    };
-    fetchGoogleCalendarEvents();
-  }, [accessToken, selectedDate, userId]);
 
   const saveLayoutToFirestore = async (newOrder, newSizes) => {
     if (!userId) return;
@@ -189,7 +157,7 @@ function DashboardContent({ userId, onLogout }) {
       localStorage.setItem(`cal_token_${userId}`, res.access_token);
       localStorage.setItem(`cal_expiry_${userId}`, String(expiryTime));
     },
-    scope: 'https://www.googleapis.com/auth/calendar.readonly'
+    scope: 'https://www.googleapis.com/auth/calendar.events' // R/W 권한 확보
   });
 
   const handleFullLogout = () => {
@@ -205,7 +173,6 @@ function DashboardContent({ userId, onLogout }) {
   };
 
   const handleFormKeyDown = (e) => {
-    // Enter를 누르면 저장 (Shift+Enter는 줄바꿈 허용)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleFormSubmit(e);
@@ -218,7 +185,8 @@ function DashboardContent({ userId, onLogout }) {
       case 'weather': return <WeatherWidget />;
       case 'workflow': return <WorkflowWidget userId={userId} />;
       case 'calendar': return <Calendar onChange={setSelectedDate} value={selectedDate} calendarType="gregory" tileClassName={({ date, view }) => view === 'month' ? (date.getDay() === 6 ? 'sat-tile' : date.getDay() === 0 ? 'sun-tile' : null) : null} formatDay={(locale, d) => d.getDate().toString()} />;
-      case 'scheduler': return <SchedulerWidget isLoggedIn={isLoggedIn} login={login} events={events} selectedDate={selectedDate} />;
+      case 'scheduler': return <SchedulerWidget isLoggedIn={isLoggedIn} login={login} accessToken={accessToken} selectedDate={selectedDate} />;
+      case 'memo': return <MemoWidget userId={userId} />;
       case 'mindmap': return <MindMapWidget userId={userId} onSelectMap={(map) => { setSelectedMapId(map.id); setIsMindMapOpen(true); }} />;
       default: return null;
     }
@@ -241,8 +209,7 @@ function DashboardContent({ userId, onLogout }) {
 
       {isMindMapOpen && selectedMapId && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '20px', marginBottom: '24px' }}>
-            <h2 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '700', color: '#007aff', letterSpacing: '-0.5px' }}>마인드맵 편집기</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '20px', marginBottom: '24px' }}>
             <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}>종료 및 닫기</button>
           </div>
           <div style={{ flex: 1, backgroundColor: '#0c0c0e', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', position: 'relative', overflow: 'hidden' }}>
@@ -251,7 +218,6 @@ function DashboardContent({ userId, onLogout }) {
         </div>
       )}
 
-      {/* 핵심 로직: 완성도 높은 텍스트에어리어 기반 멀티라인 모달 팝업 */}
       {inputModal.isOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <form onSubmit={handleFormSubmit} style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '360px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)' }}>
