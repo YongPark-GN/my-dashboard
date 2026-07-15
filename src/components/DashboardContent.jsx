@@ -9,13 +9,13 @@ import WorkflowWidget from './WorkflowWidget';
 import SchedulerWidget from './SchedulerWidget';
 import MindMapWidget from './MindMapWidget';
 import MemoWidget from './MemoWidget';
+import Dock from './Dock'; // 👈 신규 추가된 Dock 컴포넌트 임포트
 
 import { iosLiquidGlassWidget } from '../styles/theme';
 import { useWidgetLayout } from '../hooks/useWidgetLayout';
 import { useGoogleCalendarAuth } from '../hooks/useGoogleCalendarAuth';
 
 export default function DashboardContent({ userId, onLogout }) {
-  // 분리해둔 커스텀 훅을 불러와서 사용합니다.
   const layout = useWidgetLayout(userId);
   const auth = useGoogleCalendarAuth(userId, onLogout);
 
@@ -23,8 +23,10 @@ export default function DashboardContent({ userId, onLogout }) {
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState(null);
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
+  
+  // 👈 테마 관리 스테이트
+  const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // 모달 입력 처리 로직
   const handleFormSubmit = (e) => {
     e.preventDefault();
     if (!inputModal.text.trim()) return;
@@ -33,7 +35,6 @@ export default function DashboardContent({ userId, onLogout }) {
   };
 
   const renderWidgetContent = (id) => {
-    // 💡 핵심 요약: 위젯 ID에 따라 알맞은 컴포넌트를 반환합니다.
     switch (id) {
       case 'clock': return <ClockWidget />;
       case 'weather': return <WeatherWidget />;
@@ -47,35 +48,59 @@ export default function DashboardContent({ userId, onLogout }) {
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#000000', padding: '32px', boxSizing: 'border-box', width: '100vw', position: 'absolute', top: 0, left: 0 }}>
-      <button onClick={auth.handleFullLogout} style={{ position: 'absolute', top: '32px', right: '32px', zIndex: 100, background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 20px', borderRadius: '14px', cursor: 'pointer' }}>
-        로그아웃
-      </button>
+    <div style={{ 
+      minHeight: '100vh', 
+      backgroundColor: isDarkMode ? '#000000' : '#f0f0f5', // 👈 테마에 따른 배경색 변경
+      padding: '32px', boxSizing: 'border-box', width: '100vw', 
+      position: 'absolute', top: 0, left: 0,
+      transition: 'background-color 0.5s ease'
+    }}>
       
-      {/* 위젯 그리드 영역 */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', width: '100%', marginTop: '60px' }}>
-        {layout.widgetOrder.map((id) => (
-          <div key={id} draggable={!layout.resizeTarget} onDragStart={() => layout.handleDragStart(id)} onDragOver={layout.handleDragOver} onDrop={() => layout.handleDrop(id)} onDragEnd={layout.handleDragEnd} 
-               style={{ ...iosLiquidGlassWidget, width: `${layout.widgetSizes[id]?.width || 320}px`, height: `${layout.widgetSizes[id]?.height || 260}px`, opacity: layout.draggingId === id ? 0.4 : 1, cursor: 'grab' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', width: '100%', paddingBottom: '120px' }}>
+        {layout.widgetOrder
+          .filter(id => layout.visibleWidgets.includes(id)) // 👈 visibleWidgets에 포함된 위젯만 렌더링
+          .map((id) => (
+          <div key={id} 
+               draggable={!layout.resizeTarget && !layout.isLocked} // 👈 잠금 시 드래그 방지
+               onDragStart={() => layout.handleDragStart(id)} 
+               onDragOver={layout.handleDragOver} 
+               onDrop={() => layout.handleDrop(id)} 
+               onDragEnd={layout.handleDragEnd} 
+               style={{ 
+                 ...iosLiquidGlassWidget, 
+                 width: `${layout.widgetSizes[id]?.width || 320}px`, 
+                 height: `${layout.widgetSizes[id]?.height || 260}px`, 
+                 opacity: layout.draggingId === id ? 0.4 : 1, 
+                 cursor: layout.isLocked ? 'default' : 'grab' // 👈 잠금 시 커서 변경
+               }}>
             {renderWidgetContent(id)}
-            <div className="ios-resize-trigger" onMouseDown={(e) => layout.initResize(e, id)} onTouchStart={(e) => layout.initResize(e, id)} />
+            {/* 👈 잠금이 아닐 때만 리사이즈 핸들러 표시 */}
+            {!layout.isLocked && (
+              <div className="ios-resize-trigger" onMouseDown={(e) => layout.initResize(e, id)} onTouchStart={(e) => layout.initResize(e, id)} />
+            )}
           </div>
         ))}
       </div>
 
-      {/* 마인드맵 확대 모달 */}
+      {/* 👈 새로 추가된 iOS 스타일 하단 Dock */}
+      <Dock 
+        layout={layout} 
+        onLogout={auth.handleFullLogout} 
+        toggleTheme={() => setIsDarkMode(!isDarkMode)} 
+        isDarkMode={isDarkMode} 
+      />
+
+      {/* 마인드맵 확대 모달 (생략 없이 원본 유지) */}
       {isMindMapOpen && selectedMapId && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-          <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ alignSelf: 'flex-start', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', marginBottom: '24px' }}>
-            종료 및 닫기
-          </button>
+          <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ alignSelf: 'flex-start', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', marginBottom: '24px' }}>종료 및 닫기</button>
           <div style={{ flex: 1, backgroundColor: '#0c0c0e', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', overflow: 'hidden' }}>
             <MindMapWidget userId={userId} isEditorMode={true} selectedMapId={selectedMapId} openModal={(config) => setInputModal({ isOpen: true, ...config })} />
           </div>
         </div>
       )}
 
-      {/* 입력 모달 (마인드맵 등에서 사용) */}
+      {/* 입력 모달 (생략 없이 원본 유지) */}
       {inputModal.isOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <form onSubmit={handleFormSubmit} style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '360px', color: '#fff' }}>

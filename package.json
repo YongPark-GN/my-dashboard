@@ -12,10 +12,13 @@
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
     "firebase": "^12.16.0",
+    "lucide-react": "^1.24.0",
     "react": "^19.2.7",
     "react-calendar": "^6.0.1",
     "react-dom": "^19.2.7",
-    "react-grid-layout": "^2.2.3"
+    "react-grid-layout": "^2.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
