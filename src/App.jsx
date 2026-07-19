@@ -4,12 +4,20 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, googleProvider } from './firebase';
 import DashboardContent from './components/DashboardContent';
-import { iosLiquidGlassTheme } from './styles/theme';
+import { iosLiquidGlassTheme, iosDockTheme } from './styles/theme';
 
-// 글로벌 스타일 동적 주입
+// 💡 핵심: 터치 환경용 드래그 앤 드롭 라이브러리 추가
+import { polyfill } from "mobile-drag-drop";
+import "mobile-drag-drop/default.css";
+
+// 폴리필 실행 (모바일/태블릿 터치 드래그 활성화)
+polyfill({
+  dragImageCenterOnTouch: true
+});
+
 if (typeof document !== 'undefined') {
   const styleTag = document.createElement('style');
-  styleTag.innerHTML = iosLiquidGlassTheme;
+  styleTag.innerHTML = iosLiquidGlassTheme + iosDockTheme; // 기존 테마와 Dock 테마 합치기
   document.head.appendChild(styleTag);
 }
 
@@ -17,7 +25,6 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // 💡 핵심 요약: Firebase의 로그인 상태를 추적합니다.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => { 
       setUser(currentUser); 
@@ -38,7 +45,6 @@ export default function App() {
     );
   }
 
-  // 로그인 성공 시 대시보드를 렌더링합니다.
   return (
     <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
       <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />

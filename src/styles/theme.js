@@ -16,7 +16,16 @@ export const iosLiquidGlassTheme = `
   .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; font-weight: bold; }
   .sat-tile { color: #30a9ff !important; }
   .sun-tile { color: #ff3b30 !important; }
-  .ios-resize-trigger { position: absolute; right: 0px; bottom: 0px; width: 24px; height: 24px; cursor: se-resize; z-index: 15; background: transparent !important; }
+  .ios-resize-trigger { 
+    position: absolute; right: 0px; bottom: 0px; 
+    width: 44px; height: 44px; /* 👈 터치 영역을 2배로 확장 */
+    cursor: se-resize; z-index: 15; background: transparent !important; 
+  }
+  .ios-resize-trigger { 
+    position: absolute; right: 0px; bottom: 0px; 
+    width: 44px; height: 44px; /* 모바일을 위한 넓은 터치 영역 유지 */
+    cursor: se-resize; z-index: 15; background: transparent !important; 
+  }
 `;
 
 export const iosLiquidGlassWidget = {

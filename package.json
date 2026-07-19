@@ -13,6 +13,7 @@
     "@react-oauth/google": "^0.13.5",
     "firebase": "^12.16.0",
     "lucide-react": "^1.24.0",
+    "mobile-drag-drop": "^3.0.0-rc.0",
     "react": "^19.2.7",
     "react-calendar": "^6.0.1",
     "react-dom": "^19.2.7",

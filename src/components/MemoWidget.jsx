@@ -124,27 +124,32 @@ export default function MemoWidget({ userId }) {
     <div 
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      // 💡 핵심: 터치 환경을 위해 바탕을 클릭(탭)하면 메뉴가 켜지거나 꺼지도록 토글 기능 추가
+      onClick={(e) => {
+        // 버튼이나 입력창 등을 터치했을 때는 메뉴가 사라지지 않도록 방어
+        if (e.target.closest('button') || e.target.closest('input') || e.target.closest('textarea')) return;
+        setIsHovered(!isHovered);
+      }}
       style={{ 
         position: 'relative', 
         overflow: 'hidden',   
         display: 'flex', flexDirection: 'column', width: '100%', height: '100%', 
         backgroundColor: activeMemo.color, transition: 'background-color 0.3s ease', 
-        borderRadius: '24px', margin: '-24px', padding: '24px', boxSizing: 'content-box' 
+        borderRadius: '24px', margin: '-24px', padding: '24px', boxSizing: 'content-box',
+        cursor: 'pointer' // 탭할 수 있다는 시각적 피드백 제공
       }}
     >
       
-      {/* 1. 상단 플로팅 컨트롤 (호버 시에만 둥둥 떠서 표시됨) */}
+      {/* 1. 상단 플로팅 컨트롤 */}
       <div style={{ 
         position: 'absolute', top: '16px', left: '16px', right: '16px', zIndex: 10,
-        display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', // 👈 핵심: 우측으로 모두 밀어내고 간격 8px 설정
+        display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px',
         opacity: isHovered ? 1 : 0, pointerEvents: isHovered ? 'auto' : 'none', transition: 'opacity 0.3s ease'
       }}>
-        {/* 💡 핵심: 텍스트를 '+'로 변경하고, Edit 버튼 좌측에 배치 */}
         <button onClick={addNewTab} 
                 style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', padding: '4px 14px', borderRadius: '12px', transition: '0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           +
         </button>
-        {/* 💡 핵심: 텍스트를 'Edit'으로 간소화 */}
         <button onClick={() => setIsModalOpen(true)} 
                 style={{ background: 'rgba(0,122,255,0.8)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', padding: '8px 16px', borderRadius: '12px', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
           Edit
@@ -153,11 +158,9 @@ export default function MemoWidget({ userId }) {
 
       {/* 2. 중앙 위젯 뷰어 영역 */}
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', textAlign: 'left', wordBreak: 'break-word', display: 'flex', flexDirection: 'column' }}>
-        
         <h3 style={{ margin: '0 0 16px 0', fontSize: '1.4rem', fontWeight: '800', color: '#fff', borderBottom: '1px solid rgba(255,255,255,0.2)', paddingBottom: '12px' }}>
           {activeMemo.title}
         </h3>
-
         <div style={{ fontSize: '0.95rem', lineHeight: '1.6', color: 'rgba(255,255,255,0.95)' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {(activeMemo.text || '*내용이 없습니다.*').replace(/\n/g, '  \n')}
@@ -167,6 +170,8 @@ export default function MemoWidget({ userId }) {
 
       {/* 3. 하단 플로팅 탭 네비게이션 */}
       <div className="hide-scrollbar" ref={tabsRef}
+           // 하단 탭을 스크롤할 때도 메뉴가 사라지는 것 방지
+           onClick={(e) => e.stopPropagation()}
            style={{ 
              position: 'absolute', bottom: '16px', left: '16px', right: '16px', zIndex: 10,
              display: 'flex', gap: '10px', overflowX: 'auto', padding: '10px',

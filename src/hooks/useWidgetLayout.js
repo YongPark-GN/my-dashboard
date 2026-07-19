@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// 기본 설정값 분리 (초기화 기능에 사용)
 const DEFAULT_ORDER = ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'memo', 'mindmap'];
 const DEFAULT_SIZES = {
   clock: { width: 360, height: 260 }, weather: { width: 320, height: 260 },
@@ -23,19 +22,43 @@ export const useWidgetLayout = (userId) => {
     return saved ? JSON.parse(saved) : DEFAULT_SIZES;
   });
 
-  // 👈 핵심 로직: 화면에 보여줄 위젯의 목록 (기본값은 전체 표시)
   const [visibleWidgets, setVisibleWidgets] = useState(() => {
     const saved = localStorage.getItem(`visible_${userId}`);
     return saved ? JSON.parse(saved) : DEFAULT_ORDER;
   });
 
-  // 👈 핵심 로직: 레이아웃 잠금 상태 관리
   const [isLocked, setIsLocked] = useState(false);
-
   const [draggingId, setDraggingId] = useState(null);
   const [resizeTarget, setResizeTarget] = useState(null);
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+
+  // 💡 핵심 로직: 현재 화면의 해상도(너비)를 실시간으로 추적합니다.
+  const [screenWidth, setScreenWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    const handleResize = () => setScreenWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // 💡 핵심 로직: 기기 화면(PC, 태블릿, 모바일)에 맞춰 위젯 크기를 자동 최적화하는 함수
+  const getResponsiveSize = (id) => {
+    const originalSize = widgetSizes[id] || DEFAULT_SIZES[id];
+    const padding = 64; // 화면 양옆 여백(32px * 2)
+    const maxWidth = screenWidth - padding;
+
+    if (screenWidth < 768) {
+      // 스마트폰 환경: 가로 공간이 좁으므로 모든 위젯을 100% 꽉 차게 배열
+      return { width: maxWidth, height: originalSize.height };
+    }
+
+    // 갤럭시 탭 & PC 환경: 원래 크기를 유지하되, 화면 바깥으로 넘치지 않도록 방어(Math.min)
+    return {
+      width: Math.min(originalSize.width, maxWidth),
+      height: originalSize.height
+    };
+  };
 
   useEffect(() => {
     if (!db || !userId) return;
@@ -60,10 +83,9 @@ export const useWidgetLayout = (userId) => {
       await setDoc(doc(db, "users", userId, "dashboard", "layoutConfig"), { 
         widgetOrder: newOrder, widgetSizes: newSizes, visibleWidgets: newVisible 
       }, { merge: true }); 
-    } catch (err) { console.error(err); }
+    } catch (err) {}
   };
 
-  // 👈 핵심 기능: 특정 위젯 끄고 켜기
   const toggleWidgetVisibility = (id) => {
     const newVisible = visibleWidgets.includes(id) 
       ? visibleWidgets.filter(wId => wId !== id) 
@@ -72,7 +94,6 @@ export const useWidgetLayout = (userId) => {
     saveLayoutToFirestore(widgetOrder, widgetSizes, newVisible);
   };
 
-  // 👈 핵심 기능: 레이아웃 기본값으로 완전 초기화
   const resetLayout = () => {
     setWidgetOrder(DEFAULT_ORDER);
     setWidgetSizes(DEFAULT_SIZES);
@@ -98,7 +119,7 @@ export const useWidgetLayout = (userId) => {
   };
 
   const initResize = (e, id) => {
-    if (isLocked) return; // 잠금 시 리사이즈 무시
+    if (isLocked) return;
     e.preventDefault(); e.stopPropagation();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -112,10 +133,12 @@ export const useWidgetLayout = (userId) => {
       if (!resizeTarget || isLocked) return;
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const maxWidth = screenWidth - 64; // 최대치 제한 보정
+      
       setWidgetSizes(prev => ({
         ...prev,
         [resizeTarget]: { 
-          width: Math.max(260, startSize.width + (clientX - startPos.x)), 
+          width: Math.min(maxWidth, Math.max(260, startSize.width + (clientX - startPos.x))), 
           height: Math.max(220, startSize.height + (clientY - startPos.y)) 
         }
       }));
@@ -134,11 +157,11 @@ export const useWidgetLayout = (userId) => {
       window.removeEventListener('mousemove', doResize); window.removeEventListener('mouseup', stopResize);
       window.removeEventListener('touchmove', doResize); window.removeEventListener('touchend', stopResize);
     };
-  }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes, visibleWidgets, isLocked]);
+  }, [resizeTarget, startPos, startSize, widgetOrder, widgetSizes, visibleWidgets, isLocked, screenWidth]);
 
   return {
     widgetOrder, widgetSizes, visibleWidgets, draggingId, resizeTarget, isLocked,
-    setIsLocked, toggleWidgetVisibility, resetLayout,
+    setIsLocked, toggleWidgetVisibility, resetLayout, getResponsiveSize,
     handleDragStart, handleDragOver, handleDragEnd, handleDrop, initResize
   };
 };
