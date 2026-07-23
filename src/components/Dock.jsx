@@ -23,10 +23,10 @@ export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
       {showLibrary && (
         <div style={{
           position: 'fixed', bottom: '104px', left: '50%', transform: 'translateX(-50%)',
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%)',
+          background: 'var(--glass-bg)',
           backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)',
           padding: '16px', borderRadius: '24px', zIndex: 999,
-          border: '1px solid rgba(255,255,255,0.18)', boxShadow: '0 16px 40px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.3)',
+          border: '1px solid var(--glass-border)', boxShadow: '0 16px 40px var(--glass-shadow), inset 0 1px 1px var(--glass-highlight)',
           display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '90vw'
         }}>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -35,16 +35,16 @@ export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
                    onClick={() => layout.toggleWidgetVisibility(id)}
                    style={{
                      padding: '9px 18px', borderRadius: '14px', cursor: 'pointer',
-                     background: layout.visibleWidgets.includes(id) ? '#007aff' : 'rgba(255,255,255,0.1)',
-                     color: '#fff', fontSize: '0.85rem', fontWeight: '600', transition: '0.2s',
-                     border: '1px solid rgba(255,255,255,0.12)'
+                     background: layout.visibleWidgets.includes(id) ? 'var(--accent)' : 'var(--chip-strong)',
+                     color: layout.visibleWidgets.includes(id) ? '#fff' : 'var(--txt)', fontSize: '0.85rem', fontWeight: '600', transition: '0.2s',
+                     border: '1px solid var(--glass-border)'
                    }}>
                 {WIDGET_NAMES[id]}
               </div>
             ))}
           </div>
           <button onClick={() => { if (confirmReset()) layout.resetLayout(); }}
-                  style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.55)', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center', padding: '4px' }}>
+                  style={{ background: 'transparent', border: 'none', color: 'var(--txt-dim)', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center', padding: '4px' }}>
             <RotateCcw size={13} strokeWidth={1.8} /> 배치 초기화
           </button>
         </div>
@@ -71,7 +71,7 @@ export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
           <span>테마</span>
         </button>
 
-        <div style={{ width: '1px', alignSelf: 'stretch', background: 'rgba(255,255,255,0.2)', margin: '6px 4px' }} />
+        <div style={{ width: '1px', alignSelf: 'stretch', background: 'var(--divider)', margin: '6px 4px' }} />
 
         <button className="ios-dock-item" onClick={onLogout} title="로그아웃">
           <LogOut size={22} strokeWidth={1.5} color="#ff453a" />

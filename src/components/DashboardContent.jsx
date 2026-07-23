@@ -1,5 +1,5 @@
 // components/DashboardContent.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 import ClockWidget from './ClockWidget';
 import WeatherWidget from './WeatherWidget';
@@ -22,6 +22,11 @@ export default function DashboardContent({ userId, onLogout }) {
   const [selectedMapId, setSelectedMapId] = useState(null);
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
   const [isDarkMode, setIsDarkMode] = useState(true);
+
+  // 테마 토큰을 문서 루트에 적용 (포털 모달·독까지 전역 반영)
+  useEffect(() => {
+    document.documentElement.dataset.theme = isDarkMode ? 'dark' : 'light';
+  }, [isDarkMode]);
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -104,22 +109,22 @@ export default function DashboardContent({ userId, onLogout }) {
       />
 
       {isMindMapOpen && selectedMapId && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, backgroundColor: '#000000', padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-          <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ alignSelf: 'flex-start', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', marginBottom: '24px' }}>종료 및 닫기</button>
-          <div style={{ flex: 1, backgroundColor: '#0c0c0e', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '24px', overflow: 'hidden' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, background: bgBase, padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+          <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ alignSelf: 'flex-start', background: 'var(--chip-strong)', border: '1px solid var(--glass-border)', color: 'var(--txt)', padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', marginBottom: '24px', fontWeight: '600' }}>← 종료 및 닫기</button>
+          <div style={{ flex: 1, background: 'var(--editor-bg)', border: '1px solid var(--glass-border)', borderRadius: '24px', overflow: 'hidden' }}>
             <MindMapWidget userId={userId} isEditorMode={true} selectedMapId={selectedMapId} openModal={(config) => setInputModal({ isOpen: true, ...config })} />
           </div>
         </div>
       )}
 
       {inputModal.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <form onSubmit={handleFormSubmit} style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '360px', color: '#fff' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <form onSubmit={handleFormSubmit} style={{ background: 'var(--editor-bg)', border: '1px solid var(--glass-border)', borderRadius: '24px', padding: '32px', width: '360px', color: 'var(--txt)', boxShadow: '0 24px 48px rgba(0,0,0,0.4)' }}>
             <h4 style={{ margin: '0 0 20px 0' }}>{inputModal.mode === 'add' ? '새 블록 내용 입력' : '블록 내용 수정'}</h4>
-            <textarea value={inputModal.text} onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })} autoFocus style={{ width: '100%', height: '100px', marginBottom: '24px' }} />
+            <textarea value={inputModal.text} onChange={(e) => setInputModal({ ...inputModal, text: e.target.value })} autoFocus style={{ width: '100%', height: '100px', marginBottom: '24px', background: 'var(--field-bg)', border: '1px solid var(--field-border)', borderRadius: '12px', padding: '12px', color: 'var(--txt)', outline: 'none', resize: 'none', fontFamily: 'inherit' }} />
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null })} style={{ flex: 1 }}>취소</button>
-              <button type="submit" style={{ flex: 1 }}>확인</button>
+              <button type="button" onClick={() => setInputModal({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null })} style={{ flex: 1, background: 'var(--chip-strong)', border: 'none', color: 'var(--txt)', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontWeight: '600' }}>취소</button>
+              <button type="submit" style={{ flex: 1, background: 'var(--accent)', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontWeight: '700' }}>확인</button>
             </div>
           </form>
         </div>

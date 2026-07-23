@@ -17,7 +17,9 @@
     "react": "^19.2.7",
     "react-calendar": "^6.0.1",
     "react-dom": "^19.2.7",
-    "react-grid-layout": "^2.2.3"
+    "react-grid-layout": "^2.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

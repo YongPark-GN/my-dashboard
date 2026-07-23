@@ -73,27 +73,25 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     });
   };
 
-  const getAnchorPoints = (nodeId) => {
-    const el = document.getElementById(`mm-node-${nodeId}`);
-    const width = el ? el.offsetWidth : 160;
-    const height = el ? el.offsetHeight : 40;
-    const node = editorNodes.find(n => n.id === nodeId);
-    const x = node ? node.x || 0 : 0;
-    const y = node ? node.y || 0 : 0;
-    return { top: { x: x + width / 2, y: y }, bottom: { x: x + width / 2, y: y + height }, left: { x: x, y: y + height / 2 }, right: { x: x + width, y: y + height / 2 } };
+  const nodeBox = (node) => {
+    const el = document.getElementById(`mm-node-${node.id}`);
+    const w = el ? el.offsetWidth : 180;
+    const h = el ? el.offsetHeight : 52;
+    const x = node.x || 0, y = node.y || 0;
+    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
   };
 
-  const getBestAnchors = (srcNode, tgtNode) => {
-    const srcAnchors = getAnchorPoints(srcNode.id);
-    const tgtAnchors = getAnchorPoints(tgtNode.id);
-    let minDistance = Infinity; let bestSrc = srcAnchors.right; let bestTgt = tgtAnchors.left;
-    Object.keys(srcAnchors).forEach(sKey => {
-      Object.keys(tgtAnchors).forEach(tKey => {
-        const dist = Math.pow(srcAnchors[sKey].x - tgtAnchors[tKey].x, 2) + Math.pow(srcAnchors[sKey].y - tgtAnchors[tKey].y, 2);
-        if (dist < minDistance) { minDistance = dist; bestSrc = srcAnchors[sKey]; bestTgt = tgtAnchors[tKey]; }
-      });
-    });
-    return { sourcePt: bestSrc, targetPt: bestTgt };
+  // 부드러운 수평 흐름 베지어 곡선. 대상이 오른쪽이면 소스 우측→대상 좌측, 왼쪽이면 반대.
+  const edgePath = (srcNode, tgtNode) => {
+    const s = nodeBox(srcNode), t = nodeBox(tgtNode);
+    const rightward = t.cx >= s.cx;
+    const sx = rightward ? s.x + s.w : s.x;
+    const tx = rightward ? t.x : t.x + t.w;
+    const sy = s.cy, ty = t.cy;
+    const c = Math.max(50, Math.abs(tx - sx) * 0.5);
+    const c1x = rightward ? sx + c : sx - c;
+    const c2x = rightward ? tx - c : tx + c;
+    return `M ${sx} ${sy} C ${c1x} ${sy}, ${c2x} ${ty}, ${tx} ${ty}`;
   };
 
   const handleInteractionStart = (e, node) => {
@@ -180,12 +178,12 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   const renderConfirmDialog = () => {
     if (!confirmDialog.isOpen) return null;
     return createPortal(
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '32px', width: '320px', color: '#fff', boxShadow: '0 20px 40px rgba(0,0,0,0.6)', textAlign: 'center' }}>
-          <p style={{ margin: '0 0 24px 0', fontSize: '1rem', color: '#ffffff', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{confirmDialog.message}</p>
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999999, backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ background: 'var(--editor-bg)', border: '1px solid var(--glass-border)', borderRadius: '24px', padding: '32px', width: '320px', color: 'var(--txt)', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', textAlign: 'center' }}>
+          <p style={{ margin: '0 0 24px 0', fontSize: '1rem', color: 'var(--txt)', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{confirmDialog.message}</p>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button onClick={() => setConfirmDialog({ isOpen: false, message: '', onConfirm: null })} style={{ flex: 1, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>취소</button>
-            <button onClick={() => { if(confirmDialog.onConfirm) confirmDialog.onConfirm(); setConfirmDialog({ isOpen: false, message: '', onConfirm: null }); }} style={{ flex: 1, background: '#ff3b30', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '700' }}>확인</button>
+            <button onClick={() => setConfirmDialog({ isOpen: false, message: '', onConfirm: null })} style={{ flex: 1, background: 'var(--chip-strong)', border: 'none', color: 'var(--txt)', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '600' }}>취소</button>
+            <button onClick={() => { if(confirmDialog.onConfirm) confirmDialog.onConfirm(); setConfirmDialog({ isOpen: false, message: '', onConfirm: null }); }} style={{ flex: 1, background: 'var(--danger)', border: 'none', color: '#fff', padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.95rem', fontWeight: '700' }}>확인</button>
           </div>
         </div>
       </div>,
@@ -197,14 +195,14 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', width: '100%' }}>
         <form onSubmit={handleCreateMap} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-          <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="새 마인드맵 제목" style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px', padding: '10px 14px', fontSize: '0.9rem', color: '#fff', outline: 'none' }} />
-          <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '12px', padding: '0 20px', fontSize: '0.9rem', fontWeight: '700', cursor: 'pointer' }}>생성</button>
+          <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="새 마인드맵 제목" style={{ flex: 1, background: 'var(--field-bg)', border: '1px solid var(--field-border)', borderRadius: '12px', padding: '10px 14px', fontSize: '0.9rem', color: 'var(--txt)', outline: 'none' }} />
+          <button type="submit" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '12px', padding: '0 20px', fontSize: '0.9rem', fontWeight: '700', cursor: 'pointer' }}>생성</button>
         </form>
         <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {mindmaps.map((map) => (
-            <div key={map.id} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px 20px', fontSize: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span onClick={() => onSelectMap(map)} style={{ color: '#ffffff', flex: 1, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '500' }}>{map.title}</span>
-              <button onClick={(e) => { e.stopPropagation(); handleDeleteMap(map.id); }} style={{ background: 'rgba(255,59,48,0.15)', border: 'none', color: '#ff3b30', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', padding: '8px 14px', borderRadius: '10px', marginLeft: '16px', transition: 'background 0.2s' }}>삭제</button>
+            <div key={map.id} style={{ background: 'var(--chip-bg)', border: '1px solid var(--field-border)', borderRadius: '16px', padding: '16px 20px', fontSize: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span onClick={() => onSelectMap(map)} style={{ color: 'var(--txt)', flex: 1, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '500' }}>{map.title}</span>
+              <button onClick={(e) => { e.stopPropagation(); handleDeleteMap(map.id); }} style={{ background: 'rgba(255,59,48,0.15)', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', padding: '8px 14px', borderRadius: '10px', marginLeft: '16px', transition: 'background 0.2s' }}>삭제</button>
             </div>
           ))}
         </div>
@@ -214,33 +212,31 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
   }
 
   return (
-    <div ref={containerRef} onMouseMove={handleInteractionMove} onTouchMove={handleInteractionMove} onMouseUp={handleInteractionEnd} onTouchEnd={handleInteractionEnd} onMouseLeave={handleInteractionEnd} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', background: '#111115' }}>
-      
-      <div style={{ position: 'fixed', bottom: '40px', right: '40px', zIndex: 10000, background: 'linear-gradient(135deg, rgba(30,30,35,0.85) 0%, rgba(15,15,18,0.9) 100%)', backdropFilter: 'blur(20px)', padding: '12px 20px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 12px 32px rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#007aff', letterSpacing: '0.5px' }}>ZOOM</span>
-        <input type="range" min="0.1" max="2.0" step="0.05" value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))} style={{ width: '220px', height: '4px', cursor: 'pointer', accentColor: '#007aff' }} />
+    <div ref={containerRef} onMouseMove={handleInteractionMove} onTouchMove={handleInteractionMove} onMouseUp={handleInteractionEnd} onTouchEnd={handleInteractionEnd} onMouseLeave={handleInteractionEnd} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'auto', background: 'var(--editor-bg)' }}>
+
+      <div style={{ position: 'fixed', bottom: '40px', right: '40px', zIndex: 10000, background: 'var(--glass-bg)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', padding: '12px 20px', borderRadius: '20px', border: '1px solid var(--glass-border)', boxShadow: '0 12px 32px var(--glass-shadow), inset 0 1px 1px var(--glass-highlight)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--accent-text)', letterSpacing: '0.5px' }}>ZOOM</span>
+        <input type="range" min="0.1" max="2.0" step="0.05" value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))} style={{ width: '220px', height: '4px', cursor: 'pointer', accentColor: 'var(--accent)' }} />
       </div>
 
       <div style={{ transform: `scale(${zoom})`, transformOrigin: '2000px 2000px', width: '4000px', height: '4000px', position: 'relative' }}>
-        <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0 }}>
+        <svg style={{ position: 'absolute', top: 0, left: 0, width: '4000px', height: '4000px', pointerEvents: 'none', zIndex: 0, overflow: 'visible' }}>
           {editorEdges?.map((edge) => {
             const sourceNode = editorNodes.find(n => n.id === edge.source); const targetNode = editorNodes.find(n => n.id === edge.target);
             if (!sourceNode || !targetNode) return null;
-            const { sourcePt, targetPt } = getBestAnchors(sourceNode, targetNode);
-            const midX = (sourcePt.x + targetPt.x) / 2;
-            const orthogonalPath = `M ${sourcePt.x} ${sourcePt.y} L ${midX} ${sourcePt.y} L ${midX} ${targetPt.y} L ${targetPt.x} ${targetPt.y}`;
-            return <path key={edge.id} d={orthogonalPath} stroke="rgba(0,122,255,0.7)" strokeWidth="3" fill="none" strokeLinejoin="round" />;
+            return <path key={edge.id} d={edgePath(sourceNode, targetNode)} stroke="var(--accent)" strokeWidth="2.5" fill="none" strokeLinecap="round" opacity="0.8" />;
           })}
         </svg>
 
         {editorNodes.map((node) => {
           const isSelected = dragState.nodeId === node.id;
+          const isRoot = node.id === 'root';
           return (
-            <div key={node.id} id={`mm-node-${node.id}`} onMouseDown={(e) => handleInteractionStart(e, node)} onTouchStart={(e) => handleInteractionStart(e, node)} style={{ position: 'absolute', left: `${node.x || 0}px`, top: `${node.y || 0}px`, minWidth: '180px', maxWidth: '320px', zIndex: isSelected ? 100 : 10, background: node.id === 'root' ? 'linear-gradient(135deg, rgba(0,122,255,0.95) 0%, rgba(0,64,128,1) 100%)' : 'linear-gradient(135deg, rgba(44,44,48,0.95) 0%, rgba(28,28,30,0.98) 100%)', border: isSelected ? '1.5px solid #007aff' : node.id === 'root' ? '1.5px solid rgba(0,122,255,0.5)' : '1px solid rgba(255,255,255,0.18)', boxShadow: isSelected ? '0 0 20px rgba(0, 122, 255, 0.6), 0 10px 30px rgba(0,0,0,0.6)' : '0 10px 24px rgba(0,0,0,0.4)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', userSelect: 'none', cursor: dragState.isDragging ? 'grabbing' : 'grab' }}>
-              <span onDoubleClick={() => internalEditNode(node.id, node.text)} style={{ fontSize: '0.9rem', fontWeight: '600', color: '#ffffff', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1, cursor: 'text', lineHeight: '1.4' }}>{node.text}</span>
+            <div key={node.id} id={`mm-node-${node.id}`} onMouseDown={(e) => handleInteractionStart(e, node)} onTouchStart={(e) => handleInteractionStart(e, node)} style={{ position: 'absolute', left: `${node.x || 0}px`, top: `${node.y || 0}px`, minWidth: '160px', maxWidth: '320px', zIndex: isSelected ? 100 : 10, background: isRoot ? 'linear-gradient(135deg, #0a84ff 0%, #0060df 100%)' : 'var(--node-bg)', border: isSelected ? '2px solid var(--accent)' : isRoot ? '1.5px solid rgba(255,255,255,0.35)' : '1px solid var(--glass-border)', boxShadow: isSelected ? '0 0 0 4px rgba(0,122,255,0.25), 0 12px 30px rgba(0,0,0,0.35)' : '0 8px 22px rgba(0,0,0,0.22)', borderRadius: '16px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', userSelect: 'none', cursor: dragState.isDragging ? 'grabbing' : 'grab' }}>
+              <span onDoubleClick={() => internalEditNode(node.id, node.text)} style={{ fontSize: '0.9rem', fontWeight: '600', color: isRoot ? '#ffffff' : 'var(--txt)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1, cursor: 'text', lineHeight: '1.4' }}>{node.text}</span>
               <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
-                <button onClick={() => internalAddNode(node.id)} onTouchEnd={(e) => { e.stopPropagation(); internalAddNode(node.id); }} style={{ width: '24px', height: '24px', background: 'rgba(52, 199, 89, 0.2)', border: '1px solid rgba(52, 199, 89, 0.5)', borderRadius: '6px', color: '#34c759', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                {node.id !== 'root' && <button onClick={() => internalDeleteNode(node.id)} onTouchEnd={(e) => { e.stopPropagation(); internalDeleteNode(node.id); }} style={{ width: '24px', height: '24px', background: 'rgba(255, 59, 48, 0.2)', border: '1px solid rgba(255, 59, 48, 0.5)', borderRadius: '6px', color: '#ff3b30', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>-</button>}
+                <button onClick={() => internalAddNode(node.id)} onTouchEnd={(e) => { e.stopPropagation(); internalAddNode(node.id); }} style={{ width: '24px', height: '24px', background: 'rgba(52, 199, 89, 0.2)', border: '1px solid rgba(52, 199, 89, 0.5)', borderRadius: '7px', color: '#34c759', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                {!isRoot && <button onClick={() => internalDeleteNode(node.id)} onTouchEnd={(e) => { e.stopPropagation(); internalDeleteNode(node.id); }} style={{ width: '24px', height: '24px', background: 'rgba(255, 59, 48, 0.2)', border: '1px solid rgba(255, 59, 48, 0.5)', borderRadius: '7px', color: '#ff453a', fontSize: '1rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>}
               </div>
             </div>
           );

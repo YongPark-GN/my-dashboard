@@ -79,32 +79,32 @@ export default function CalendarWidget({ isLoggedIn, login, accessToken }) {
 
       {/* 우: 선택한 날짜 일정 */}
       <div style={{ flex: '1 1 240px', minWidth: '220px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <div style={{ fontSize: '1rem', fontWeight: '700', color: '#fff', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#007aff' }} />
+        <div style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--txt)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)' }} />
           {dateLabel}
         </div>
 
         {!isLoggedIn ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>구글 캘린더를 연동하면<br />일정이 여기에 표시됩니다.</span>
-            <button onClick={() => login()} style={{ padding: '10px 20px', borderRadius: '14px', background: '#007aff', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}>캘린더 연동</button>
+            <span style={{ color: 'var(--txt-dim)', fontSize: '0.85rem', textAlign: 'center' }}>구글 캘린더를 연동하면<br />일정이 여기에 표시됩니다.</span>
+            <button onClick={() => login()} style={{ padding: '10px 20px', borderRadius: '14px', background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}>캘린더 연동</button>
           </div>
         ) : (
           <>
             <form onSubmit={handleAdd} style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <input type="time" value={newEventTime} onChange={e => setNewEventTime(e.target.value)} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', borderRadius: '10px', padding: '8px', outline: 'none', fontSize: '0.8rem' }} />
-              <input type="text" placeholder="새 일정" value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', borderRadius: '10px', padding: '8px 10px', outline: 'none', fontSize: '0.8rem' }} />
-              <button type="submit" style={{ background: '#007aff', color: '#fff', border: 'none', borderRadius: '10px', padding: '0 14px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}>+</button>
+              <input type="time" value={newEventTime} onChange={e => setNewEventTime(e.target.value)} style={{ background: 'var(--field-bg)', border: '1px solid var(--field-border)', color: 'var(--txt)', borderRadius: '10px', padding: '8px', outline: 'none', fontSize: '0.8rem' }} />
+              <input type="text" placeholder="새 일정" value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} style={{ flex: 1, minWidth: 0, background: 'var(--field-bg)', border: '1px solid var(--field-border)', color: 'var(--txt)', borderRadius: '10px', padding: '8px 10px', outline: 'none', fontSize: '0.8rem' }} />
+              <button type="submit" style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: '10px', padding: '0 14px', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem' }}>+</button>
             </form>
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {events.length === 0 && <div style={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: '20px', fontSize: '0.85rem' }}>일정이 없습니다.</div>}
+              {events.length === 0 && <div style={{ color: 'var(--txt-faint)', textAlign: 'center', marginTop: '20px', fontSize: '0.85rem' }}>일정이 없습니다.</div>}
               {events.map(ev => (
-                <div key={ev.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.06)', padding: '10px 12px', borderRadius: '12px' }}>
+                <div key={ev.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--chip-bg)', padding: '10px 12px', borderRadius: '12px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 }}>
-                    <span style={{ fontSize: '0.88rem', fontWeight: '600', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                    <span style={{ fontSize: '0.72rem', color: '#4da3ff', fontWeight: '500' }}>{new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span style={{ fontSize: '0.88rem', fontWeight: '600', color: 'var(--txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--accent-text)', fontWeight: '600' }}>{new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <button onClick={() => setPendingDeleteId(ev.id)} style={{ background: 'rgba(255,59,48,0.15)', color: '#ff453a', border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '700', flexShrink: 0 }}>삭제</button>
+                  <button onClick={() => setPendingDeleteId(ev.id)} style={{ background: 'rgba(255,59,48,0.15)', color: 'var(--danger)', border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: '700', flexShrink: 0 }}>삭제</button>
                 </div>
               ))}
             </div>
