@@ -4,29 +4,46 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { toast } from '../components/Toast';
 
-const DEFAULT_ORDER = ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'memo', 'mindmap'];
+const DEFAULT_ORDER = ['clock', 'weather', 'quote', 'calendar', 'memo', 'mindmap'];
 const DEFAULT_SIZES = {
-  clock: { width: 360, height: 260 }, weather: { width: 320, height: 260 },
-  workflow: { width: 664, height: 340 }, calendar: { width: 360, height: 260 },
-  scheduler: { width: 320, height: 260 }, memo: { width: 320, height: 260 }, 
-  mindmap: { width: 360, height: 260 }
+  clock: { width: 380, height: 240 }, weather: { width: 320, height: 260 },
+  quote: { width: 360, height: 240 }, calendar: { width: 720, height: 380 },
+  memo: { width: 360, height: 320 }, mindmap: { width: 360, height: 260 }
+};
+
+// 제거된 위젯 + 통합 마이그레이션. 저장된 예전 레이아웃을 현재 위젯 세트에 맞게 정리한다.
+const REMOVED = ['workflow', 'scheduler'];
+const reconcileLayout = (order, visible, sizes) => {
+  const safeOrder = Array.isArray(order) ? order : DEFAULT_ORDER;
+  const safeVisible = Array.isArray(visible) ? visible : DEFAULT_ORDER;
+  const wasPreUpgrade = safeOrder.some(id => REMOVED.includes(id));
+
+  const knownOrder = safeOrder.filter(id => DEFAULT_ORDER.includes(id));
+  const newIds = DEFAULT_ORDER.filter(id => !safeOrder.includes(id)); // 새로 추가된 위젯
+  const nextOrder = [...knownOrder, ...newIds];
+
+  const knownVisible = safeVisible.filter(id => DEFAULT_ORDER.includes(id));
+  const nextVisible = [...knownVisible, ...newIds]; // 새 위젯은 기본 표시
+
+  let nextSizes = { ...DEFAULT_SIZES, ...(sizes || {}) };
+  // 캘린더가 스케줄러와 통합되어 더 넓은 공간이 필요 → 예전 레이아웃이면 크기 재설정
+  if (wasPreUpgrade) nextSizes = { ...nextSizes, calendar: DEFAULT_SIZES.calendar };
+
+  const changed = wasPreUpgrade || newIds.length > 0 || nextOrder.length !== safeOrder.length || nextVisible.length !== safeVisible.length;
+  return { nextOrder, nextVisible, nextSizes, changed };
 };
 
 export const useWidgetLayout = (userId) => {
-  const [widgetOrder, setWidgetOrder] = useState(() => {
-    const saved = localStorage.getItem(`order_${userId}`);
-    return saved ? JSON.parse(saved) : DEFAULT_ORDER;
-  });
+  const initial = (() => {
+    const order = JSON.parse(localStorage.getItem(`order_${userId}`) || 'null');
+    const visible = JSON.parse(localStorage.getItem(`visible_${userId}`) || 'null');
+    const sizes = JSON.parse(localStorage.getItem(`sizes_${userId}`) || 'null');
+    return reconcileLayout(order, visible, sizes);
+  })();
 
-  const [widgetSizes, setWidgetSizes] = useState(() => {
-    const saved = localStorage.getItem(`sizes_${userId}`);
-    return saved ? JSON.parse(saved) : DEFAULT_SIZES;
-  });
-
-  const [visibleWidgets, setVisibleWidgets] = useState(() => {
-    const saved = localStorage.getItem(`visible_${userId}`);
-    return saved ? JSON.parse(saved) : DEFAULT_ORDER;
-  });
+  const [widgetOrder, setWidgetOrder] = useState(initial.nextOrder);
+  const [widgetSizes, setWidgetSizes] = useState(initial.nextSizes);
+  const [visibleWidgets, setVisibleWidgets] = useState(initial.nextVisible);
 
   const [isLocked, setIsLocked] = useState(false);
   const [draggingId, setDraggingId] = useState(null);
@@ -67,9 +84,14 @@ export const useWidgetLayout = (userId) => {
     const unsubscribe = onSnapshot(layoutConfigRef, (docSnap) => {
       if (docSnap.exists()) {
         const remoteData = docSnap.data();
-        if (remoteData?.widgetOrder) setWidgetOrder(remoteData.widgetOrder);
-        if (remoteData?.widgetSizes) setWidgetSizes(remoteData.widgetSizes);
-        if (remoteData?.visibleWidgets) setVisibleWidgets(remoteData.visibleWidgets);
+        const { nextOrder, nextVisible, nextSizes, changed } = reconcileLayout(
+          remoteData?.widgetOrder, remoteData?.visibleWidgets, remoteData?.widgetSizes
+        );
+        setWidgetOrder(nextOrder);
+        setVisibleWidgets(nextVisible);
+        setWidgetSizes(nextSizes);
+        // 예전/불완전한 레이아웃이면 정리된 버전을 다시 저장
+        if (changed) saveLayoutToFirestore(nextOrder, nextSizes, nextVisible);
       }
     });
     return () => unsubscribe();

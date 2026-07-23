@@ -1,12 +1,10 @@
 // components/DashboardContent.jsx
 import React, { useState } from 'react';
-import Calendar from 'react-calendar';
-import 'react-calendar/dist/Calendar.css'; 
 
 import ClockWidget from './ClockWidget';
 import WeatherWidget from './WeatherWidget';
-import WorkflowWidget from './WorkflowWidget';
-import SchedulerWidget from './SchedulerWidget';
+import QuoteWidget from './QuoteWidget';
+import CalendarWidget from './CalendarWidget';
 import MindMapWidget from './MindMapWidget';
 import MemoWidget from './MemoWidget';
 import Dock from './Dock';
@@ -20,7 +18,6 @@ export default function DashboardContent({ userId, onLogout }) {
   const layout = useWidgetLayout(userId);
   const auth = useGoogleCalendarAuth(userId, onLogout);
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
   const [selectedMapId, setSelectedMapId] = useState(null);
   const [inputModal, setInputModal] = useState({ isOpen: false, nodeId: null, text: '', mode: 'add', onSubmit: null });
@@ -37,49 +34,60 @@ export default function DashboardContent({ userId, onLogout }) {
     switch (id) {
       case 'clock': return <ClockWidget />;
       case 'weather': return <WeatherWidget />;
-      case 'workflow': return <WorkflowWidget userId={userId} />;
-      case 'calendar': return <Calendar onChange={setSelectedDate} value={selectedDate} calendarType="gregory" tileClassName={({ date, view }) => view === 'month' ? (date.getDay() === 6 ? 'sat-tile' : date.getDay() === 0 ? 'sun-tile' : null) : null} formatDay={(locale, d) => d.getDate().toString()} />;
-      case 'scheduler': return <SchedulerWidget isLoggedIn={auth.isLoggedIn} login={auth.login} accessToken={auth.accessToken} selectedDate={selectedDate} />;
+      case 'quote': return <QuoteWidget />;
+      case 'calendar': return <CalendarWidget isLoggedIn={auth.isLoggedIn} login={auth.login} accessToken={auth.accessToken} />;
       case 'memo': return <MemoWidget userId={userId} />;
       case 'mindmap': return <MindMapWidget userId={userId} onSelectMap={(map) => { setSelectedMapId(map.id); setIsMindMapOpen(true); }} />;
       default: return null;
     }
   };
 
+  // 유리가 굴절할 배경 오로라 (다크/라이트)
+  const bgBase = isDarkMode
+    ? 'linear-gradient(160deg, #0a0a12 0%, #0f0d1a 50%, #0a0e18 100%)'
+    : 'linear-gradient(160deg, #eef1f8 0%, #f3eefa 50%, #eaf1f6 100%)';
+  const blobs = isDarkMode
+    ? ['#1e3a8a', '#6d28d9', '#0e7490']
+    : ['#a5b4fc', '#c4b5fd', '#99f6e4'];
+
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      backgroundColor: isDarkMode ? '#000000' : '#f0f0f5', 
-      padding: '32px', boxSizing: 'border-box', width: '100vw', 
+    <div style={{
+      minHeight: '100vh',
+      background: bgBase,
+      padding: '32px', boxSizing: 'border-box', width: '100vw',
       position: 'absolute', top: 0, left: 0,
-      transition: 'background-color 0.5s ease'
+      transition: 'background 0.5s ease', overflow: 'hidden'
     }}>
       <Toaster />
 
-      {/* 💡 위젯을 감싸는 그리드 영역. 플렉스 박스가 자동 줄바꿈(wrap) 처리 */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', width: '100%', paddingBottom: '120px' }}>
+      {/* 배경 오로라 블롭 */}
+      <div className="lg-blob" style={{ width: '460px', height: '460px', top: '-120px', left: '-80px', background: blobs[0] }} />
+      <div className="lg-blob" style={{ width: '520px', height: '520px', bottom: '-160px', right: '-100px', background: blobs[1] }} />
+      <div className="lg-blob" style={{ width: '380px', height: '380px', top: '40%', left: '45%', background: blobs[2], opacity: 0.4 }} />
+
+      {/* 💡 위젯 그리드 (배경 위 레이어) */}
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', gap: '28px', width: '100%', paddingBottom: '120px' }}>
         {layout.widgetOrder
-          .filter(id => layout.visibleWidgets.includes(id)) 
+          .filter(id => layout.visibleWidgets.includes(id))
           .map((id) => {
-            // 💡 핵심 로직: 기존의 고정 사이즈(widgetSizes) 대신 반응형 함수 호출
             const responsiveSize = layout.getResponsiveSize(id);
 
             return (
-              <div key={id} 
-                   draggable={!layout.resizeTarget && !layout.isLocked} 
-                   onDragStart={() => layout.handleDragStart(id)} 
-                   onDragOver={layout.handleDragOver} 
-                   onDrop={() => layout.handleDrop(id)} 
-                   onDragEnd={layout.handleDragEnd} 
-                   style={{ 
-                     ...iosLiquidGlassWidget, 
-                     width: `${responsiveSize.width}px`,   // 👈 모바일/태블릿 맞춤형 너비 적용
-                     height: `${responsiveSize.height}px`, // 👈 모바일/태블릿 맞춤형 높이 적용
-                     opacity: layout.draggingId === id ? 0.4 : 1, 
-                     cursor: layout.isLocked ? 'default' : 'grab' 
+              <div key={id} className="lg-widget"
+                   draggable={!layout.resizeTarget && !layout.isLocked}
+                   onDragStart={() => layout.handleDragStart(id)}
+                   onDragOver={layout.handleDragOver}
+                   onDrop={() => layout.handleDrop(id)}
+                   onDragEnd={layout.handleDragEnd}
+                   style={{
+                     ...iosLiquidGlassWidget,
+                     width: `${responsiveSize.width}px`,
+                     height: `${responsiveSize.height}px`,
+                     opacity: layout.draggingId === id ? 0.4 : 1,
+                     cursor: layout.isLocked ? 'default' : 'grab'
                    }}>
                 {renderWidgetContent(id)}
-                
+
                 {!layout.isLocked && (
                   <div className="ios-resize-trigger" onMouseDown={(e) => layout.initResize(e, id)} onTouchStart={(e) => layout.initResize(e, id)} />
                 )}

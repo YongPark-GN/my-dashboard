@@ -16,23 +16,31 @@ export const iosLiquidGlassTheme = `
   .react-calendar__tile--active { background: #007aff !important; color: white !important; border-radius: 12px !important; font-weight: bold; }
   .sat-tile { color: #30a9ff !important; }
   .sun-tile { color: #ff3b30 !important; }
-  .ios-resize-trigger { 
-    position: absolute; right: 0px; bottom: 0px; 
+  .ios-resize-trigger {
+    position: absolute; right: 0px; bottom: 0px;
     width: 44px; height: 44px; /* 👈 터치 영역을 2배로 확장 */
-    cursor: se-resize; z-index: 15; background: transparent !important; 
+    cursor: se-resize; z-index: 15; background: transparent !important;
   }
-  .ios-resize-trigger { 
-    position: absolute; right: 0px; bottom: 0px; 
-    width: 44px; height: 44px; /* 모바일을 위한 넓은 터치 영역 유지 */
-    cursor: se-resize; z-index: 15; background: transparent !important; 
+
+  /* 💧 리퀴드 글래스: 상단 가장자리 스페큘러 라인 (콘텐츠를 가리지 않음) */
+  .lg-widget::before {
+    content: '';
+    position: absolute; top: 0; left: 12%; right: 12%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+    pointer-events: none; z-index: 3;
   }
+
+  /* 배경 오로라 블롭 (유리가 굴절할 컬러 소스) */
+  .lg-blob { position: fixed; border-radius: 50%; filter: blur(90px); pointer-events: none; z-index: 0; opacity: 0.55; }
 `;
 
 export const iosLiquidGlassWidget = {
-  background: 'linear-gradient(135deg, rgba(32, 32, 36, 0.7) 0%, rgba(16, 16, 18, 0.75) 100%)',
-  backdropFilter: 'blur(40px) saturate(200%)',
-  borderRadius: '32px', padding: '24px', border: '1px solid rgba(255, 255, 255, 0.1)',
-  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.5)', color: '#ffffff', display: 'flex', flexDirection: 'column',
+  background: 'linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 100%)',
+  backdropFilter: 'blur(40px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+  borderRadius: '28px', padding: '24px', border: '1px solid rgba(255, 255, 255, 0.18)',
+  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.37), inset 0 1px 1px rgba(255,255,255,0.28), inset 0 -1px 1px rgba(255,255,255,0.05)',
+  color: '#ffffff', display: 'flex', flexDirection: 'column',
   boxSizing: 'border-box', overflow: 'hidden', position: 'relative'
 };
 
@@ -45,14 +53,16 @@ export const iosDockTheme = `
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
-    background: linear-gradient(135deg, rgba(40, 40, 45, 0.6) 0%, rgba(20, 20, 25, 0.8) 100%);
-    backdrop-filter: blur(40px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 32px;
-    padding: 12px 24px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 28px;
+    padding: 10px 16px;
     display: flex;
-    gap: 16px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255,255,255,0.3);
     z-index: 1000;
   }
   .ios-dock-item {
@@ -60,28 +70,31 @@ export const iosDockTheme = `
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 50px;
-    height: 50px;
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.05);
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.06);
     border: 1px solid transparent;
     color: #fff;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+    transition: all 0.25s cubic-bezier(0.25, 1, 0.5, 1);
     font-size: 1.2rem;
   }
   .ios-dock-item:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    transform: translateY(-8px) scale(1.1); /* 👈 마우스 오버 시 부드럽게 커지는 효과 */
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    transform: translateY(-10px) scale(1.08);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.4);
   }
   .ios-dock-item.active {
-    background: rgba(0, 122, 255, 0.3);
-    border: 1px solid rgba(0, 122, 255, 0.5);
+    background: rgba(0, 122, 255, 0.32);
+    border: 1px solid rgba(0, 122, 255, 0.55);
+    box-shadow: 0 0 16px rgba(0,122,255,0.4);
   }
   .ios-dock-item span {
-    font-size: 0.65rem;
-    margin-top: 4px;
-    opacity: 0.8;
+    font-size: 0.62rem;
+    margin-top: 3px;
+    opacity: 0.85;
+    font-weight: 500;
   }
 `;
