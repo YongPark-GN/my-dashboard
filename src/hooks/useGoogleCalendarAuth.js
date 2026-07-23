@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { toast } from '../components/Toast';
 
 export const useGoogleCalendarAuth = (userId, onLogout) => {
   const [accessToken, setAccessToken] = useState('');
@@ -21,7 +22,7 @@ export const useGoogleCalendarAuth = (userId, onLogout) => {
           expiryTime: expiryTime,
           updatedAt: new Date().toISOString()
         }, { merge: true });
-      } catch (err) { console.error("Firebase 토큰 저장 실패:", err); }
+      } catch (err) { toast('캘린더 로그인 정보 저장에 실패했습니다.'); }
     },
     scope: 'https://www.googleapis.com/auth/calendar.events'
   });

@@ -85,10 +85,3 @@ export const iosDockTheme = `
     opacity: 0.8;
   }
 `;
-
-// 기존 스타일에 Dock 스타일 주입되도록 수정 (App.jsx에서 호출될 때 같이 렌더링됨)
-if (typeof document !== 'undefined') {
-  const styleTag = document.createElement('style');
-  styleTag.innerHTML = iosDockTheme;
-  document.head.appendChild(styleTag);
-}

@@ -5,6 +5,7 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { toast } from './Toast';
 
 const hideScrollbarStyle = `
   .hide-scrollbar::-webkit-scrollbar { display: none; }
@@ -53,7 +54,7 @@ export default function MemoWidget({ userId }) {
     if (!userId) return;
     try {
       await setDoc(doc(db, "users", userId, "dashboard", "memoWidget"), { memos: updatedMemos, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (err) {}
+    } catch (err) { toast('메모 저장에 실패했습니다. 인터넷 연결을 확인해 주세요.'); }
   };
 
   const activeMemo = memos.find(m => m.id === activeTabId) || memos[0];

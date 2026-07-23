@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from './Toast';
+import ConfirmDialog from './ConfirmDialog';
 
 export default function SchedulerWidget({ isLoggedIn, login, accessToken, selectedDate }) {
   const [events, setEvents] = useState([]);
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventTime, setNewEventTime] = useState('12:00');
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   const fetchEvents = async () => {
     if (!accessToken) return;
@@ -17,7 +20,7 @@ export default function SchedulerWidget({ isLoggedIn, login, accessToken, select
       if (data.items) {
         setEvents(data.items.map(i => ({ id: i.id, title: i.summary || '제목 없음', start: i.start.dateTime || i.start.date })));
       }
-    } catch(e) {}
+    } catch(e) { toast('일정을 불러오지 못했습니다.'); }
   };
 
   useEffect(() => { fetchEvents(); }, [accessToken, selectedDate]);
@@ -41,19 +44,17 @@ export default function SchedulerWidget({ isLoggedIn, login, accessToken, select
       });
       setNewEventTitle('');
       fetchEvents();
-    } catch(e) {}
+    } catch(e) { toast('일정 추가에 실패했습니다.'); }
   };
 
   const handleDelete = async (id) => {
-    // 캘린더 삭제는 즉각적인 처리를 위해 기본 컨펌 유지
-    if (!confirm('이 일정을 삭제하시겠습니까?')) return;
     try {
       await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       fetchEvents();
-    } catch(e) {}
+    } catch(e) { toast('일정 삭제에 실패했습니다.'); }
   };
 
   if (!isLoggedIn) {
@@ -79,10 +80,18 @@ export default function SchedulerWidget({ isLoggedIn, login, accessToken, select
               <span style={{ fontSize: '1rem', fontWeight: '600', color: '#fff' }}>{ev.title}</span>
               <span style={{ fontSize: '0.8rem', color: '#007aff', fontWeight: '500' }}>{new Date(ev.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
             </div>
-            <button onClick={() => handleDelete(ev.id)} style={{ background: 'rgba(255,59,48,0.15)', color: '#ff3b30', border: 'none', borderRadius: '10px', padding: '8px 14px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '700' }}>삭제</button>
+            <button onClick={() => setPendingDeleteId(ev.id)} style={{ background: 'rgba(255,59,48,0.15)', color: '#ff3b30', border: 'none', borderRadius: '10px', padding: '8px 14px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '700' }}>삭제</button>
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingDeleteId !== null}
+        message={'이 일정을 삭제하시겠습니까?'}
+        confirmLabel="삭제"
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => { handleDelete(pendingDeleteId); setPendingDeleteId(null); }}
+      />
     </div>
   );
 }

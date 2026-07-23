@@ -46,7 +46,7 @@ export default function App() {
   }
 
   return (
-    <GoogleOAuthProvider clientId="451500058668-2okdn1lli09s36opj20ch4ibts9fkjm3.apps.googleusercontent.com">
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID}>
       <DashboardContent userId={user.uid} onLogout={() => signOut(auth)} />
     </GoogleOAuthProvider>
   );

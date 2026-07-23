@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { toast } from './Toast';
 
 const STAGES = [
   { id: 'plan', label: '기획' }, { id: 'design', label: '설계' }, { id: 'simulation', label: '해석' }, { id: 'done', label: '완료' }
 ];
+const STAGE_ORDER = STAGES.map(s => s.id);
+const STAGE_PROGRESS = { plan: 10, design: 40, simulation: 75, done: 100 };
 
 export default function WorkflowWidget({ userId }) {
   const [tasks, setTasks] = useState(() => {
@@ -16,6 +19,8 @@ export default function WorkflowWidget({ userId }) {
     ];
   });
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState('');
 
   useEffect(() => {
     if (!db || !userId) return;
@@ -38,17 +43,36 @@ export default function WorkflowWidget({ userId }) {
     try {
       if (!db) return;
       await setDoc(doc(db, "users", userId, "dashboard", "taskData"), { list });
-    } catch (err) { console.error("Firestore Task 저장 실패:", err); }
+    } catch (err) { toast('과제 저장에 실패했습니다. 인터넷 연결을 확인해 주세요.'); }
   };
 
-  const moveTaskStage = (taskId, currentStage) => {
-    const stageOrder = ['plan', 'design', 'simulation', 'done'];
-    const nextIdx = stageOrder.indexOf(currentStage) + 1;
-    if (nextIdx >= stageOrder.length) return;
-    
-    const updated = tasks.map(t => t.id === taskId ? { ...t, stage: stageOrder[nextIdx], progress: nextIdx === 3 ? 100 : Math.min(90, t.progress + 25) } : t);
+  const moveTask = (taskId, currentStage, direction) => {
+    const targetIdx = STAGE_ORDER.indexOf(currentStage) + direction;
+    if (targetIdx < 0 || targetIdx >= STAGE_ORDER.length) return;
+    const targetStage = STAGE_ORDER[targetIdx];
+    const updated = tasks.map(t => t.id === taskId ? { ...t, stage: targetStage, progress: STAGE_PROGRESS[targetStage] } : t);
     setTasks(updated);
     saveTasks(updated);
+  };
+
+  const deleteTask = (taskId) => {
+    const updated = tasks.filter(t => t.id !== taskId);
+    setTasks(updated);
+    saveTasks(updated);
+  };
+
+  const startEdit = (task) => { setEditingId(task.id); setEditingText(task.title); };
+
+  const commitEdit = () => {
+    if (!editingId) return;
+    const trimmed = editingText.trim();
+    if (trimmed) {
+      const updated = tasks.map(t => t.id === editingId ? { ...t, title: trimmed } : t);
+      setTasks(updated);
+      saveTasks(updated);
+    }
+    setEditingId(null);
+    setEditingText('');
   };
 
   const addTask = (e) => {
@@ -73,15 +97,32 @@ export default function WorkflowWidget({ userId }) {
           <div key={stage.id} style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '14px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.3)' }}>{stage.label}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto', flex: 1 }}>
-              {tasks.filter(t => t.stage === stage.id).map(task => (
+              {tasks.filter(t => t.stage === stage.id).map(task => {
+                const stageIdx = STAGE_ORDER.indexOf(stage.id);
+                return (
                 <div key={task.id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '10px', padding: '8px', fontSize: '0.7rem' }}>
-                  <div>{task.title}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-                    <span style={{ color: '#34c759' }}>{task.progress}%</span>
-                    {stage.id !== 'done' && <button onClick={() => moveTaskStage(task.id, task.stage)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', cursor: 'pointer' }}>➔</button>}
+                  {editingId === task.id ? (
+                    <input
+                      type="text" value={editingText} autoFocus
+                      onChange={(e) => setEditingText(e.target.value)}
+                      onBlur={commitEdit}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') { setEditingId(null); setEditingText(''); } }}
+                      style={{ width: '100%', background: 'rgba(0,0,0,0.3)', border: '1px solid #007aff', borderRadius: '6px', padding: '3px 5px', fontSize: '0.7rem', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  ) : (
+                    <div onDoubleClick={() => startEdit(task)} title="더블클릭하여 수정" style={{ cursor: 'text', wordBreak: 'break-word' }}>{task.title}</div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', gap: '4px' }}>
+                    <span style={{ color: '#34c759', flexShrink: 0 }}>{task.progress}%</span>
+                    <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                      {stageIdx > 0 && <button onClick={() => moveTask(task.id, task.stage, -1)} title="이전 단계" style={ctrlBtn}>←</button>}
+                      {stageIdx < STAGE_ORDER.length - 1 && <button onClick={() => moveTask(task.id, task.stage, 1)} title="다음 단계" style={ctrlBtn}>→</button>}
+                      <button onClick={() => deleteTask(task.id)} title="삭제" style={{ ...ctrlBtn, color: '#ff453a' }}>×</button>
+                    </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -89,3 +130,9 @@ export default function WorkflowWidget({ userId }) {
     </div>
   );
 }
+
+const ctrlBtn = {
+  background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', cursor: 'pointer',
+  borderRadius: '5px', width: '20px', height: '20px', fontSize: '0.85rem', lineHeight: '1',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0
+};

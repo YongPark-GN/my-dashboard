@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# local env overrides (.env is committed — it holds only public web config)
+.env.local
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

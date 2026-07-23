@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { toast } from '../components/Toast';
 
 const DEFAULT_ORDER = ['clock', 'weather', 'workflow', 'calendar', 'scheduler', 'memo', 'mindmap'];
 const DEFAULT_SIZES = {
@@ -79,11 +80,13 @@ export const useWidgetLayout = (userId) => {
     localStorage.setItem(`order_${userId}`, JSON.stringify(newOrder));
     localStorage.setItem(`sizes_${userId}`, JSON.stringify(newSizes));
     localStorage.setItem(`visible_${userId}`, JSON.stringify(newVisible));
-    try { 
-      await setDoc(doc(db, "users", userId, "dashboard", "layoutConfig"), { 
-        widgetOrder: newOrder, widgetSizes: newSizes, visibleWidgets: newVisible 
-      }, { merge: true }); 
-    } catch (err) {}
+    try {
+      await setDoc(doc(db, "users", userId, "dashboard", "layoutConfig"), {
+        widgetOrder: newOrder, widgetSizes: newSizes, visibleWidgets: newVisible
+      }, { merge: true });
+    } catch (err) {
+      toast('레이아웃 저장에 실패했습니다. 인터넷 연결을 확인해 주세요.');
+    }
   };
 
   const toggleWidgetVisibility = (id) => {

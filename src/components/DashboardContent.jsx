@@ -9,7 +9,8 @@ import WorkflowWidget from './WorkflowWidget';
 import SchedulerWidget from './SchedulerWidget';
 import MindMapWidget from './MindMapWidget';
 import MemoWidget from './MemoWidget';
-import Dock from './Dock'; 
+import Dock from './Dock';
+import { Toaster } from './Toast';
 
 import { iosLiquidGlassWidget } from '../styles/theme';
 import { useWidgetLayout } from '../hooks/useWidgetLayout';
@@ -53,7 +54,8 @@ export default function DashboardContent({ userId, onLogout }) {
       position: 'absolute', top: 0, left: 0,
       transition: 'background-color 0.5s ease'
     }}>
-      
+      <Toaster />
+
       {/* 💡 위젯을 감싸는 그리드 영역. 플렉스 박스가 자동 줄바꿈(wrap) 처리 */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', width: '100%', paddingBottom: '120px' }}>
         {layout.widgetOrder
