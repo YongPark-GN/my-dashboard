@@ -171,6 +171,7 @@ export default function CalendarWidget({ isLoggedIn, login, accessToken }) {
   const [activeListId, setActiveListId] = useState('');
   const [tasks, setTasks] = useState([]);
   const [tasksUnavailable, setTasksUnavailable] = useState(false);
+  const [tasksError, setTasksError] = useState(''); // 실패 시 Google API 원문 메시지
 
   const authHeaders = useMemo(
     () => ({ Authorization: `Bearer ${accessToken}` }),
@@ -237,32 +238,40 @@ export default function CalendarWidget({ isLoggedIn, login, accessToken }) {
   useEffect(() => { reloadEvents(); }, [reloadEvents]);
 
   // ── Tasks fetch ──
+  // 실패 시 Google API 응답의 error.message 를 읽어 원인을 표면화한다.
+  const readError = useCallback(async (res) => {
+    let msg = `HTTP ${res.status}`;
+    try { const d = await res.json(); if (d?.error?.message) msg = d.error.message; } catch { /* 본문 없음 */ }
+    setTasksError(msg);
+    setTasksUnavailable(true);
+  }, []);
+
   const fetchTaskLists = useCallback(async () => {
     if (!accessToken) return;
     try {
       const res = await fetch(`${TASKS_BASE}/users/@me/lists`, { headers: authHeaders });
-      if (res.status === 401 || res.status === 403) { setTasksUnavailable(true); return; }
+      if (!res.ok) { await readError(res); return; }
       const data = await res.json();
       const lists = (data.items || []).map((l) => ({ id: l.id, title: l.title }));
       setTaskLists(lists);
-      setTasksUnavailable(false);
+      setTasksUnavailable(false); setTasksError('');
       if (lists.length && !lists.some((l) => l.id === activeListId)) setActiveListId(lists[0].id);
-    } catch { /* 조용히 무시 */ }
-  }, [accessToken, authHeaders, activeListId]);
+    } catch (e) { setTasksError(`네트워크 오류: ${e.message}`); setTasksUnavailable(true); }
+  }, [accessToken, authHeaders, activeListId, readError]);
 
   const fetchTasks = useCallback(async (listId) => {
     if (!accessToken || !listId) return;
     try {
       const res = await fetch(`${TASKS_BASE}/lists/${listId}/tasks?showCompleted=true&showHidden=false&maxResults=100`, { headers: authHeaders });
-      if (res.status === 401 || res.status === 403) { setTasksUnavailable(true); return; }
+      if (!res.ok) { await readError(res); return; }
       const data = await res.json();
       const items = (data.items || []).map((t) => ({
         id: t.id, title: t.title || '(제목 없음)', status: t.status,
         due: t.due ? dateKey(new Date(t.due)) : null, position: t.position || '',
       })).sort((a, b) => a.position.localeCompare(b.position));
       setTasks(items);
-    } catch { /* 무시 */ }
-  }, [accessToken, authHeaders]);
+    } catch { /* 목록은 떴으니 조용히 무시 */ }
+  }, [accessToken, authHeaders, readError]);
 
   // 전체화면 진입 시에만 Tasks 를 불러온다 (위젯 상태에선 불필요한 호출 방지).
   useEffect(() => {
@@ -448,6 +457,7 @@ export default function CalendarWidget({ isLoggedIn, login, accessToken }) {
           setActiveListId={setActiveListId}
           tasks={tasks}
           tasksUnavailable={tasksUnavailable}
+          tasksError={tasksError}
           onAddTask={addTask}
           onToggleTask={toggleTask}
           onRequestDeleteTask={(id) => setPendingDelete({ kind: 'task', id, listId: activeListId })}
@@ -474,7 +484,7 @@ function FullscreenCalendar({
   view, setView, activeMonth, setActiveMonth, weekAnchor, setWeekAnchor,
   selectedDate, setSelectedDate,
   monthEvents, onClose, onAddEvent, onRequestDeleteEvent,
-  taskLists, activeListId, setActiveListId, tasks, tasksUnavailable,
+  taskLists, activeListId, setActiveListId, tasks, tasksUnavailable, tasksError,
   onAddTask, onToggleTask, onRequestDeleteTask, onReconnect,
 }) {
   const [composer, setComposer] = useState(null); // { date } — 셀/시간대 클릭 시 일정 추가
@@ -826,8 +836,21 @@ function FullscreenCalendar({
 
           {tasksUnavailable ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', textAlign: 'center', padding: '12px' }}>
-              <span style={{ color: 'var(--txt-dim)', fontSize: '0.85rem', lineHeight: 1.5 }}>할 일(Tasks) 권한이 없습니다.<br />다시 연동하면 할 일이 표시됩니다.</span>
-              <button onClick={() => onReconnect()} style={{ padding: '9px 18px', borderRadius: '12px', background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>다시 연동</button>
+              {(/disabled|has not been used|SERVICE_DISABLED/i.test(tasksError)) ? (
+                <>
+                  <span style={{ color: 'var(--txt)', fontSize: '0.88rem', fontWeight: 700 }}>Tasks API가 꺼져 있습니다</span>
+                  <span style={{ color: 'var(--txt-dim)', fontSize: '0.8rem', lineHeight: 1.5 }}>Google Cloud 프로젝트에서 Google Tasks API를 활성화한 뒤 다시 연동하세요.</span>
+                  <a href="https://console.cloud.google.com/apis/library/tasks.googleapis.com" target="_blank" rel="noreferrer"
+                    style={{ padding: '9px 18px', borderRadius: '12px', background: 'var(--accent)', color: '#fff', textDecoration: 'none', fontWeight: '700', fontSize: '0.82rem' }}>Tasks API 활성화 페이지 열기</a>
+                </>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--txt)', fontSize: '0.88rem', fontWeight: 700 }}>할 일(Tasks) 권한이 없습니다</span>
+                  <span style={{ color: 'var(--txt-dim)', fontSize: '0.8rem', lineHeight: 1.5 }}>tasks 권한을 추가한 뒤라면 <b>다시 연동</b>해야 반영됩니다.</span>
+                </>
+              )}
+              <button onClick={() => onReconnect()} style={{ padding: '9px 18px', borderRadius: '12px', background: 'var(--chip-strong)', color: 'var(--txt)', border: '1px solid var(--glass-border)', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>다시 연동</button>
+              {tasksError && <div style={{ marginTop: '4px', color: 'var(--txt-faint)', fontSize: '0.68rem', lineHeight: 1.4, wordBreak: 'break-word', maxWidth: '260px' }}>{tasksError}</div>}
             </div>
           ) : (
             <>
