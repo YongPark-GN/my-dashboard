@@ -87,13 +87,15 @@ export default function DashboardContent({ userId, onLogout }) {
     ? ['#1e3a8a', '#6d28d9', '#0e7490']
     : ['#a5b4fc', '#c4b5fd', '#99f6e4'];
 
+  const compact = layout.compactMode;
+
   return (
-    <div style={{
+    <div className={compact ? 'lg-root compact' : 'lg-root'} style={{
       minHeight: '100vh',
       background: bgBase,
-      padding: '32px', boxSizing: 'border-box', width: '100vw',
+      padding: compact ? '16px 16px 120px' : '32px', boxSizing: 'border-box', width: '100vw',
       position: 'absolute', top: 0, left: 0,
-      transition: 'background 0.5s ease', overflow: 'hidden'
+      transition: 'background 0.5s ease', overflowX: 'hidden'
     }}>
       <Toaster />
 
@@ -102,8 +104,8 @@ export default function DashboardContent({ userId, onLogout }) {
       <div className="lg-blob" style={{ width: '520px', height: '520px', bottom: '-160px', right: '-100px', background: blobs[1] }} />
       <div className="lg-blob" style={{ width: '380px', height: '380px', top: '40%', left: '45%', background: blobs[2], opacity: 0.4 }} />
 
-      {/* 💡 위젯 그리드 (배경 위 레이어) */}
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', gap: '28px', width: '100%', paddingBottom: '120px' }}>
+      {/* 💡 위젯 그리드 (배경 위 레이어). 컴팩트 모드는 full-width 위젯이라 자연히 1열로 쌓인다. */}
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', gap: compact ? '14px' : '28px', width: '100%', paddingBottom: compact ? '0' : '120px', justifyContent: compact ? 'center' : 'flex-start' }}>
         {layout.widgetOrder
           .filter(id => layout.visibleWidgets.includes(id))
           .map((id) => {
@@ -118,10 +120,15 @@ export default function DashboardContent({ userId, onLogout }) {
                    onDragEnd={layout.handleDragEnd}
                    style={{
                      ...iosLiquidGlassWidget,
+                     padding: compact ? '18px' : iosLiquidGlassWidget.padding,
+                     borderRadius: compact ? '22px' : iosLiquidGlassWidget.borderRadius,
                      width: `${responsiveSize.width}px`,
+                     maxWidth: '100%',
                      height: `${responsiveSize.height}px`,
                      opacity: layout.draggingId === id ? 0.4 : 1,
-                     cursor: layout.isLocked ? 'default' : 'grab'
+                     cursor: layout.isLocked ? 'default' : 'grab',
+                     // 잠금 상태(터치 기본)에서는 세로 스크롤을 브라우저에 확실히 넘겨준다
+                     touchAction: layout.isLocked ? 'pan-y' : 'none'
                    }}>
                 {renderWidgetContent(id)}
 
@@ -133,15 +140,16 @@ export default function DashboardContent({ userId, onLogout }) {
           })}
       </div>
 
-      <Dock 
-        layout={layout} 
-        onLogout={auth.handleFullLogout} 
-        toggleTheme={() => setIsDarkMode(!isDarkMode)} 
-        isDarkMode={isDarkMode} 
+      <Dock
+        layout={layout}
+        onLogout={auth.handleFullLogout}
+        toggleTheme={() => setIsDarkMode(!isDarkMode)}
+        isDarkMode={isDarkMode}
+        compact={compact}
       />
 
       {isMindMapOpen && selectedMapId && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, background: bgBase, padding: '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999999, background: bgBase, padding: compact ? '16px' : '40px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
           <button onClick={() => { setIsMindMapOpen(false); setSelectedMapId(null); }} style={{ alignSelf: 'flex-start', background: 'var(--chip-strong)', border: '1px solid var(--glass-border)', color: 'var(--txt)', padding: '10px 24px', borderRadius: '12px', cursor: 'pointer', marginBottom: '24px', fontWeight: '600' }}>← 종료 및 닫기</button>
           <div style={{ flex: 1, background: 'var(--editor-bg)', border: '1px solid var(--glass-border)', borderRadius: '24px', overflow: 'hidden' }}>
             <MindMapWidget userId={userId} isEditorMode={true} selectedMapId={selectedMapId} openModal={(config) => setInputModal({ isOpen: true, ...config })} />

@@ -1,6 +1,6 @@
 // components/Dock.jsx
 import React, { useState } from 'react';
-import { Layers2, Grid2x2, Lock, LockOpen, Maximize2, Sun, Moon, Power, RotateCcw } from 'lucide-react';
+import { Layers2, Grid2x2, Lock, LockOpen, Maximize2, Sun, Moon, Power, RotateCcw, Smartphone, Monitor } from 'lucide-react';
 import PagePopup from './PagePopup';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -39,7 +39,7 @@ function DockItem({ icon: Icon, label, active, danger, onClick }) {
   );
 }
 
-export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
+export default function Dock({ layout, onLogout, toggleTheme, isDarkMode, compact }) {
   // 독 팝업은 한 번에 하나만 (null | 'widgets' | 'pages')
   const [openPanel, setOpenPanel] = useState(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
@@ -98,7 +98,13 @@ export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
         <DockItem icon={Layers2} label={`페이지 — ${layout.activePage?.name || ''}`} active={openPanel === 'pages'} onClick={() => togglePanel('pages')} />
         <DockItem icon={Grid2x2} label="위젯 라이브러리" active={showLibrary} onClick={() => togglePanel('widgets')} />
         <DockItem icon={layout.isLocked ? Lock : LockOpen} label={layout.isLocked ? '배치 잠금 해제' : '배치 잠그기'} active={layout.isLocked} onClick={() => layout.setIsLocked(!layout.isLocked)} />
-        <DockItem icon={Maximize2} label="전체화면" onClick={toggleFullScreen} />
+        <DockItem
+          icon={compact ? Monitor : Smartphone}
+          label={compact ? '넓은 화면 모드로' : '모바일 모드로'}
+          active={compact}
+          onClick={layout.toggleCompact}
+        />
+        {!compact && <DockItem icon={Maximize2} label="전체화면" onClick={toggleFullScreen} />}
         <DockItem icon={isDarkMode ? Sun : Moon} label={isDarkMode ? '라이트 모드' : '다크 모드'} onClick={toggleTheme} />
 
         <div className="ios-dock-divider" />

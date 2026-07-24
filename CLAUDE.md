@@ -93,6 +93,21 @@ src/
 테마는 `DashboardContent`가 `document.documentElement.dataset.theme`에 적용하므로
 포털 모달·독까지 전역 반영된다.
 
+### 컴팩트(모바일) 모드
+
+좁은 화면·터치 기기에서 쓰는 1열 세로 스택 모드. `useWidgetLayout`이 관리한다.
+
+- **자동 + 수동**: `matchMedia('(max-width: 820px), (pointer: coarse)')`로 자동 감지하되,
+  Dock의 모바일/데스크탑 토글로 끄고 켠 값(`compact_{uid}`, 기기별 localStorage)이 우선한다.
+- **스크롤 vs 드래그**: 컴팩트 모드는 기본이 `isLocked`라 위젯 카드가 `draggable`이 되지
+  않는다. 이게 터치 스크롤이 위젯에 잡히던 문제의 근본 해결책이다. 잠긴 위젯엔
+  `touchAction: 'pan-y'`도 준다. 정리하려면 Dock 자물쇠로 잠금을 풀면 드래그가 켜진다.
+- **레이아웃**: `getResponsiveSize`가 컴팩트일 때 화면 폭과 무관하게 full-width를 돌려줘
+  자연히 1열로 쌓인다. 높이는 420px 상한.
+- **내부 밀림 방지**: `theme.js`에 `.lg-widget :where(...) { min-width: 0 }` — 특이도 0이라
+  위젯 인라인 값은 그대로 이기면서, flex/grid 자식이 콘텐츠보다 작게 줄어들 수 있게 해
+  긴 텍스트가 옆 요소를 밀지 않고 자기 자리에서 말줄임된다.
+
 ### 페이지
 
 회사/집처럼 상황별로 위젯 배치를 나눠 두는 단위. 최대 `MAX_PAGES`(8)개.
@@ -154,6 +169,21 @@ npx firebase-tools deploy --only firestore:rules
 `npm run dev` 후 로그인 화면에서 **"로그인 없이 미리보기 (dev 전용)"** 버튼으로
 로그인 없이 대시보드를 볼 수 있다. 단 가짜 uid라 Firestore는 권한 거부되므로
 데이터 저장/불러오기는 동작하지 않는다(UI·테마 확인용). 프로덕션 빌드에는 미포함.
+
+### 저장까지 검증하려면 — 에뮬레이터
+
+가짜 uid로는 "저장 → 스냅샷이 되돌아옴" 경로를 못 태운다. 그 경로에서만 나는 버그를
+로그인 없이 잡으려면 로컬 에뮬레이터를 쓴다 (`VITE_USE_EMULATOR=1`이면 `firebase.js`가
+Firestore/Auth 에뮬레이터에 붙는다 — 프로덕션 빌드엔 영향 없음):
+
+```bash
+npm run emu       # 터미널 1: Firestore(8080)+Auth(9099) 에뮬레이터
+npm run dev:emu   # 터미널 2: --mode emulator 로 dev 서버
+```
+
+로그인 화면의 **"에뮬레이터로 미리보기"** 버튼이 익명 로그인(진짜 uid)으로 들어간다.
+특정 문서 상태를 심으려면 `node scripts/seed-emulator.mjs <uid>`
+(에뮬레이터는 `Authorization: Bearer owner` 를 관리자 접근으로 취급 → 규칙 우회).
 
 # Compact instructions
 

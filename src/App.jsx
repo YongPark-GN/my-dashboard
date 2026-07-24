@@ -1,8 +1,8 @@
 // App.jsx
 import React, { useState, useEffect } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth, googleProvider } from './firebase';
+import { signInWithPopup, onAuthStateChanged, signOut, signInAnonymously } from 'firebase/auth';
+import { auth, googleProvider, usingEmulator } from './firebase';
 import DashboardContent from './components/DashboardContent';
 import { iosLiquidGlassTheme, iosDockTheme } from './styles/theme';
 
@@ -45,8 +45,12 @@ export default function App() {
           Google 계정으로 로그인 (DB 접근)
         </button>
         {import.meta.env.DEV && (
-          <button onClick={() => setDevUser({ uid: 'dev-preview' })} style={{ padding: '10px 20px', fontSize: '0.85rem', fontWeight: '600', borderRadius: '14px', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer' }}>
-            로그인 없이 미리보기 (dev 전용)
+          <button
+            // 에뮬레이터에 붙어 있으면 익명 로그인 → 진짜 uid 라 저장·동기화까지 검증된다.
+            // 아니면 가짜 uid 로 UI 만 본다 (Firestore 는 권한 거부).
+            onClick={() => (usingEmulator ? signInAnonymously(auth) : setDevUser({ uid: 'dev-preview' }))}
+            style={{ padding: '10px 20px', fontSize: '0.85rem', fontWeight: '600', borderRadius: '14px', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer' }}>
+            {usingEmulator ? '에뮬레이터로 미리보기 (저장까지 동작)' : '로그인 없이 미리보기 (dev 전용)'}
           </button>
         )}
       </div>

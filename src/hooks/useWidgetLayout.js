@@ -107,7 +107,26 @@ export const useWidgetLayout = (userId) => {
   // 활성 페이지는 기기별 로컬 값이다 — 회사 PC와 집 PC가 서로 다른 페이지를 열어둘 수 있게.
   const [activePageId, setActivePageId] = useState(initial.activePageId);
 
-  const [isLocked, setIsLocked] = useState(false);
+  // ---- 컴팩트(모바일) 모드 ----
+  // 좁은 화면·터치 기기면 자동으로 켜지되, 사용자가 Dock 버튼으로 끄고 켠 값은 존중한다.
+  // override: null=자동 따라감 | true/false=수동 고정. 기기별 값이라 localStorage.
+  const readCompactOverride = () => {
+    const v = localStorage.getItem(`compact_${userId}`);
+    return v === '1' ? true : v === '0' ? false : null;
+  };
+  const detectCompact = () => typeof window !== 'undefined'
+    && window.matchMedia('(max-width: 820px), (pointer: coarse)').matches;
+
+  const [compactOverride, setCompactOverride] = useState(readCompactOverride);
+  const [autoCompact, setAutoCompact] = useState(detectCompact);
+  const compactMode = compactOverride ?? autoCompact;
+
+  // 터치로 스크롤하려다 위젯이 드래그로 잡히는 걸 막는다:
+  // 컴팩트 모드에서는 기본을 '잠금'으로 둬서 카드가 draggable 이 되지 않게 한다.
+  const [lockOverride, setLockOverride] = useState(null); // null=모드 기본값 따라감
+  const isLocked = lockOverride ?? compactMode;
+  const setIsLocked = (v) => setLockOverride(v);
+
   const [draggingId, setDraggingId] = useState(null);
   const [resizeTarget, setResizeTarget] = useState(null);
   const [startSize, setStartSize] = useState({ width: 0, height: 0 });
@@ -121,10 +140,21 @@ export const useWidgetLayout = (userId) => {
   const [screenWidth, setScreenWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
   useEffect(() => {
-    const handleResize = () => setScreenWidth(window.innerWidth);
+    const handleResize = () => { setScreenWidth(window.innerWidth); setAutoCompact(detectCompact()); };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // uid 는 로그인/로그아웃 시 DashboardContent 가 통째로 리마운트되며 바뀌므로
+  // (마운트된 동안엔 고정) 초기 useState 로 읽은 값이면 충분하다.
+
+  // 컴팩트 모드를 명시적으로 토글 → 그 기기에 고정 저장. 잠금은 모드 기본값으로 되돌린다.
+  const toggleCompact = () => {
+    const next = !compactMode;
+    setCompactOverride(next);
+    setLockOverride(null);
+    if (userId) localStorage.setItem(`compact_${userId}`, next ? '1' : '0');
+  };
 
   const activePage = pages.find(p => p.id === activePageId) || pages[0];
   const { widgetOrder, widgetSizes, visibleWidgets } = activePage;
@@ -132,12 +162,14 @@ export const useWidgetLayout = (userId) => {
   // 💡 핵심 로직: 기기 화면(PC, 태블릿, 모바일)에 맞춰 위젯 크기를 자동 최적화하는 함수
   const getResponsiveSize = (id) => {
     const originalSize = widgetSizes[id] || DEFAULT_SIZES[id];
-    const padding = 64; // 화면 양옆 여백(32px * 2)
+    // 컴팩트 모드는 바깥 패딩이 더 좁다(양옆 16px). 일반은 32px.
+    const padding = compactMode ? 32 : 64;
     const maxWidth = screenWidth - padding;
 
-    if (screenWidth < 768) {
-      // 스마트폰 환경: 가로 공간이 좁으므로 모든 위젯을 100% 꽉 차게 배열
-      return { width: maxWidth, height: originalSize.height };
+    if (compactMode) {
+      // 컴팩트 모드: 화면 폭과 무관하게 한 줄에 하나씩, 폭을 꽉 채워 세로로 쌓는다.
+      // 높이는 원래 값을 쓰되 너무 큰 위젯이 화면을 다 먹지 않도록 상한을 둔다.
+      return { width: maxWidth, height: Math.min(originalSize.height, 420) };
     }
 
     // 갤럭시 탭 & PC 환경: 원래 크기를 유지하되, 화면 바깥으로 넘치지 않도록 방어(Math.min)
@@ -311,6 +343,8 @@ export const useWidgetLayout = (userId) => {
     widgetOrder, widgetSizes, visibleWidgets, draggingId, resizeTarget, isLocked,
     setIsLocked, toggleWidgetVisibility, resetLayout, getResponsiveSize,
     handleDragStart, handleDragOver, handleDragEnd, handleDrop, initResize,
+    // 컴팩트(모바일) 모드
+    compactMode, toggleCompact,
     // 페이지
     pages, activePageId, activePage, switchPage, createPage, duplicatePage, renamePage, deletePage
   };

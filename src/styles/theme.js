@@ -87,6 +87,28 @@ export const iosLiquidGlassTheme = `
   /* 커스텀 스크롤바 */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: var(--chip-strong); border-radius: 8px; }
+
+  /* ── 작은 화면 방어: 내부 요소가 밀리거나 카드를 넘치지 않게 ──
+     :where() 는 특이도 0 이라 위젯이 인라인으로 준 값은 그대로 이긴다.
+     flex/grid 자식이 콘텐츠 크기 아래로도 줄어들 수 있게 해서(min-width:0)
+     긴 텍스트가 옆 요소를 밀어내는 대신 자기 자리에서 말줄임되게 한다. */
+  .lg-widget :where(div, span, a, p, h1, h2, h3, button, input, select, label) { min-width: 0; }
+  .lg-widget :where(img) { max-width: 100%; }
+  .lg-widget :where(input, select, textarea) { max-width: 100%; }
+
+  /* ── 컴팩트(모바일) 모드 ── */
+  .lg-root.compact .lg-widget { padding: 18px; border-radius: 22px; }
+  /* 컴팩트에서는 위젯이 한 줄 하나라, 상단 스페큘러 라인을 살짝 안쪽으로 */
+  .lg-root.compact .lg-widget::before { left: 20%; right: 20%; }
+  /* 손가락 스크롤이 항상 우선하도록 (잠금 상태 위젯) */
+  .lg-root.compact { -webkit-tap-highlight-color: transparent; }
+
+  /* 아주 좁은 폭(작은 폰)에서 독 버튼과 간격을 한 단계 더 조인다 */
+  @media (max-width: 380px) {
+    .ios-dock-item { width: 36px; height: 36px; border-radius: 11px; }
+    .ios-dock-container { gap: 1px; padding: 6px 7px; }
+    .ios-dock-divider { margin: 0 3px; }
+  }
 `;
 
 export const iosLiquidGlassWidget = {
