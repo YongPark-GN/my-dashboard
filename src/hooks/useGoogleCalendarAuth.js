@@ -22,9 +22,9 @@ export const useGoogleCalendarAuth = (userId, onLogout) => {
           expiryTime: expiryTime,
           updatedAt: new Date().toISOString()
         }, { merge: true });
-      } catch (err) { toast('캘린더 로그인 정보 저장에 실패했습니다.'); }
+      } catch { toast('캘린더 로그인 정보 저장에 실패했습니다.'); }
     },
-    scope: 'https://www.googleapis.com/auth/calendar.events'
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks'
   });
 
   useEffect(() => {

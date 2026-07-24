@@ -67,6 +67,57 @@ export const iosLiquidGlassTheme = `
   .sat-tile { color: #30a9ff !important; }
   .sun-tile { color: #ff3b30 !important; }
 
+  /* 위젯 달력 타일의 일정 점(dot) — abbr 아래에 놓기 위해 tile 을 세로 정렬 */
+  .cal-dot-wrap { display: flex; gap: 3px; justify-content: center; margin-top: 3px; height: 5px; }
+  .cal-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+  /* === 전체화면 캘린더(구글 캘린더 수준) === */
+  .calfs-scroll::-webkit-scrollbar { width: 8px; }
+  .calfs-cell {
+    border-right: 1px solid var(--divider);
+    border-bottom: 1px solid var(--divider);
+    padding: 4px 5px 6px; min-height: 0; display: flex; flex-direction: column;
+    overflow: hidden; cursor: pointer; transition: background 0.12s ease;
+  }
+  .calfs-cell:hover { background: var(--chip-bg); }
+  .calfs-cell.other { background: transparent; }
+  .calfs-cell.other .calfs-daynum { color: var(--txt-faint); }
+  .calfs-daynum {
+    font-size: 0.78rem; font-weight: 600; color: var(--txt);
+    width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%; flex-shrink: 0;
+  }
+  .calfs-daynum.today { background: var(--accent); color: #fff; }
+  .calfs-daynum.sat { color: #30a9ff; }
+  .calfs-daynum.sun { color: #ff3b30; }
+  .calfs-daynum.today.sat, .calfs-daynum.today.sun { color: #fff; }
+  /* 레인 막대 (여러 날 잇는 일정 = 채워진 바, timed/task = 투명 바) */
+  .calfs-bar {
+    height: 19px; box-sizing: border-box; display: flex; align-items: center; gap: 4px;
+    font-size: 0.72rem; line-height: 1; padding: 0 6px; border-radius: 5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+    font-weight: 500;
+  }
+  .calfs-bar:hover { filter: brightness(1.08); }
+  .calfs-bar-timed { background: transparent; padding-left: 3px; }
+  .calfs-bar-timed:hover { background: var(--chip-bg); filter: none; }
+  .calfs-more { font-size: 0.68rem; color: var(--txt-dim); padding-left: 2px; cursor: default; pointer-events: auto; }
+
+  /* 주간 뷰 시간 격자의 일정 블록 */
+  .calfs-wblock {
+    position: absolute; overflow: hidden; border-radius: 5px; padding: 2px 5px;
+    color: #fff; font-size: 0.68rem; line-height: 1.25; cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); min-height: 16px; z-index: 2;
+  }
+  .calfs-wblock:hover { filter: brightness(1.08); }
+  .calfs-navbtn {
+    background: var(--chip-bg); border: 1px solid var(--glass-border); color: var(--txt);
+    width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; transition: background 0.15s ease;
+  }
+  .calfs-navbtn:hover { background: var(--chip-strong); }
+  .calfs-task-row:hover .calfs-task-del { opacity: 1; }
+
   .ios-resize-trigger {
     position: absolute; right: 0px; bottom: 0px;
     width: 44px; height: 44px; /* 터치 영역 확장 */
