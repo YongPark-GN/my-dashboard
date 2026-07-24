@@ -1,5 +1,4 @@
 // components/ConfirmDialog.jsx
-import React from 'react';
 import { createPortal } from 'react-dom';
 
 // 앱 전역에서 재사용하는 확인 모달. 브라우저 기본 confirm() 대신 iOS 글래스 톤을 유지한다.

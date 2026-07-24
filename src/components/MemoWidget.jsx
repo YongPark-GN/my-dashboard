@@ -1,5 +1,5 @@
 // components/MemoWidget.jsx — 탭 + 마크다운 메모. 보기 좋게 렌더링, 체크리스트 클릭 토글 지원.
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { toast } from './Toast';
@@ -71,7 +71,7 @@ export default function MemoWidget({ userId }) {
     if (!userId) return;
     try {
       await setDoc(doc(db, 'users', userId, 'dashboard', 'memoWidget'), { memos: list, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (e) { toast('메모 저장에 실패했습니다.'); }
+    } catch { toast('메모 저장에 실패했습니다.'); }
   };
 
   const active = memos.find(m => m.id === activeId) || memos[0];
@@ -97,6 +97,7 @@ export default function MemoWidget({ userId }) {
   const deleteMemo = (id, e) => {
     e.stopPropagation();
     if (memos.length === 1) return;
+    // eslint-disable-next-line react-hooks/purity -- 이벤트 핸들러(렌더 아님)에서의 타임스탬프 기록
     lastLocalEdit.current = Date.now();
     const next = memos.filter(m => m.id !== id);
     setMemos(next);

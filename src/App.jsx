@@ -1,5 +1,5 @@
 // App.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { signInWithPopup, onAuthStateChanged, signOut, signInAnonymously } from 'firebase/auth';
 import { auth, googleProvider, usingEmulator } from './firebase';

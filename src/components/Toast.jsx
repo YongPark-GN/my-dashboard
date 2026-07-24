@@ -1,5 +1,5 @@
 // components/Toast.jsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 // 훅·컴포넌트 어디서든 호출 가능한 전역 토스트. React 컨텍스트를 쓰지 않는
@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 let listeners = [];
 let counter = 0;
 
+// eslint-disable-next-line react-refresh/only-export-components -- 전역 pub/sub 토스트 함수(의도된 non-component export)
 export function toast(message, type = 'error') {
   const id = ++counter;
   listeners.forEach((fn) => fn({ id, message, type }));

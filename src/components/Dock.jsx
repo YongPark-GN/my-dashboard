@@ -1,5 +1,5 @@
 // components/Dock.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Layers2, Grid2x2, Lock, LockOpen, Maximize2, Sun, Moon, Power, RotateCcw, Smartphone, Monitor } from 'lucide-react';
 import PagePopup from './PagePopup';
 import ConfirmDialog from './ConfirmDialog';

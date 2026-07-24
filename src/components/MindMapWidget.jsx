@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom'; // 핵심 로직: 모달 창 렌더링 컨텍스트 분리 및 오버플로우 회피용 리액트 코어 유틸
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -27,6 +27,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
 
   useEffect(() => {
     if (!isEditorMode || !selectedMapId || !userId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 에디터 진입 시 줌 초기화(의도된 동기 리셋)
     setZoom(1);
     const unsubscribe = onSnapshot(doc(db, 'users', userId, 'mindmaps', selectedMapId), (docSnap) => {
       if (docSnap.exists() && !dragState.isDragging) {
@@ -58,7 +59,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
         nodes: [{ id: 'root', text: newTitle, x: 1920, y: 1980 }], edges: []
       });
       setNewTitle('');
-    } catch (err) { toast('마인드맵 생성에 실패했습니다.'); }
+    } catch { toast('마인드맵 생성에 실패했습니다.'); }
   };
 
   const handleDeleteMap = (mapId) => {
@@ -68,7 +69,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
       message: "이 마인드맵을 정말로 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.",
       onConfirm: async () => {
         try { await deleteDoc(doc(db, 'users', userId, 'mindmaps', mapId)); }
-        catch (err) { toast('마인드맵 삭제에 실패했습니다.'); }
+        catch { toast('마인드맵 삭제에 실패했습니다.'); }
       }
     });
   };
@@ -116,7 +117,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
     const currentNodesSnapshot = [...editorNodes];
     setDragState({ isDragging: false, nodeId: null, startX: 0, startY: 0, initialX: 0, initialY: 0 });
     try { await updateDoc(doc(db, 'users', userId, 'mindmaps', selectedMapId), { nodes: currentNodesSnapshot }); }
-    catch (err) { toast('노드 위치 저장에 실패했습니다.'); }
+    catch { toast('노드 위치 저장에 실패했습니다.'); }
   };
 
   const internalAddNode = (parentId) => {
@@ -140,7 +141,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
       const newEdge = { id: `e_${parentId}_${newId}`, source: parentId, target: newId };
       try {
         await updateDoc(doc(db, 'users', userId, 'mindmaps', selectedMapId), { nodes: [...editorNodes, newNode], edges: [...editorEdges, newEdge] });
-      } catch (err) { toast('블록 추가에 실패했습니다.'); }
+      } catch { toast('블록 추가에 실패했습니다.'); }
     }});
   };
 
@@ -150,7 +151,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
       const updated = editorNodes.map(n => n.id === nodeId ? { ...n, text } : n);
       try {
         await updateDoc(doc(db, 'users', userId, 'mindmaps', selectedMapId), { nodes: updated });
-      } catch (err) { toast('블록 수정에 실패했습니다.'); }
+      } catch { toast('블록 수정에 실패했습니다.'); }
     }});
   };
 
@@ -169,7 +170,7 @@ export default function MindMapWidget({ userId, onSelectMap, isEditorMode, selec
         const updatedEdges = editorEdges.filter(e => e.source !== nodeId && e.target !== nodeId);
         try {
           await updateDoc(doc(db, 'users', userId, 'mindmaps', selectedMapId), { nodes: updatedNodes, edges: updatedEdges });
-        } catch (err) { toast('블록 삭제에 실패했습니다.'); }
+        } catch { toast('블록 삭제에 실패했습니다.'); }
       }
     });
   };

@@ -207,6 +207,7 @@ export const useWidgetLayout = (userId) => {
       if (changed) savePages(nextPages);
     });
     return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- savePages 는 의도적으로 제외(구독 재생성 방지)
   }, [userId]);
 
   useEffect(() => {
@@ -336,6 +337,7 @@ export const useWidgetLayout = (userId) => {
       window.removeEventListener('mousemove', doResize); window.removeEventListener('mouseup', stopResize);
       window.removeEventListener('touchmove', doResize); window.removeEventListener('touchend', stopResize);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitActivePage·savePages 는 의도적으로 제외
   }, [resizeTarget, startPos, startSize, isLocked, screenWidth, activePageId]);
 
   return {

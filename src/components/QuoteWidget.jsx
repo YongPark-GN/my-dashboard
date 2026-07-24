@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 
 // 잠언(Proverbs) 랜덤 구절을 bolls.life 에서 실시간으로 가져온다.
@@ -26,13 +26,14 @@ export default function QuoteWidget() {
       const pick = verses[Math.floor(Math.random() * verses.length)];
       setVerse({ text: clean(pick.text), ref: `잠언 ${chapter}:${pick.verse}` });
       setStatus('ok');
-    } catch (err) {
+    } catch {
       setStatus((s) => (s === 'ok' ? 'ok' : 'error'));
     } finally {
       setTimeout(() => setSpin(false), 400);
     }
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- 비동기 fetch 로더
   useEffect(() => { load(); }, [load]);
 
   return (

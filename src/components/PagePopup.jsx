@@ -1,5 +1,5 @@
 // components/PagePopup.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
 import { MAX_PAGES } from '../hooks/useWidgetLayout';
