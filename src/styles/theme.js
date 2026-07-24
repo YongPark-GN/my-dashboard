@@ -99,7 +99,9 @@ export const iosLiquidGlassWidget = {
   boxSizing: 'border-box', overflow: 'hidden', position: 'relative'
 };
 
-// 하단 Dock 스타일
+// 하단 Dock 스타일.
+// 아이콘만 두는 미니멀 구성 — 라벨은 title 툴팁으로 대신하고, 활성 표시는
+// 파란 발광 대신 아이콘 색 + 아래 점 하나로 조용히 나타낸다.
 export const iosDockTheme = `
   .ios-dock-container {
     position: fixed;
@@ -110,50 +112,77 @@ export const iosDockTheme = `
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
     border: 1px solid var(--glass-border);
-    border-radius: 28px;
-    padding: 10px 16px;
+    border-radius: 22px;
+    padding: 7px 9px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 2px;
     box-shadow: 0 16px 40px var(--glass-shadow), inset 0 1px 1px var(--glass-highlight);
     z-index: 1000;
   }
   .ios-dock-item {
+    position: relative;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 54px;
-    height: 54px;
-    border-radius: 18px;
-    background: var(--chip-bg);
-    border: 1px solid transparent;
-    color: var(--txt);
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--txt-dim);
     cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.25, 1, 0.5, 1);
-    font-size: 1.2rem;
+    transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease;
   }
   .ios-dock-item:hover {
-    background: var(--chip-strong);
-    border: 1px solid var(--glass-border);
-    transform: translateY(-10px) scale(1.08);
-    box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+    background: var(--chip-bg);
+    color: var(--txt);
+    transform: translateY(-2px);
   }
   .ios-dock-item.active {
-    background: rgba(0, 122, 255, 0.32);
-    border: 1px solid rgba(0, 122, 255, 0.55);
-    box-shadow: 0 0 16px rgba(0,122,255,0.4);
-    color: #fff;
+    color: var(--accent-text);
+    background: var(--chip-bg);
   }
-  .ios-dock-item span {
-    font-size: 0.62rem;
-    margin-top: 3px;
-    opacity: 0.85;
-    font-weight: 500;
-    /* 페이지 이름처럼 긴 라벨이 독을 밀어내지 않도록 */
-    max-width: 46px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* 활성 표시 — 아이콘 아래 작은 점 */
+  .ios-dock-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .ios-dock-item.danger { color: var(--danger); opacity: 0.75; }
+  .ios-dock-item.danger:hover { opacity: 1; background: var(--chip-bg); }
+
+  .ios-dock-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--divider);
+    margin: 0 5px;
+    flex-shrink: 0;
+  }
+
+  /* 독 위로 뜨는 팝업(위젯 라이브러리 / 페이지 목록) 공통 껍데기 */
+  .ios-dock-popup {
+    position: fixed;
+    bottom: 90px; /* 독(24 + 54) 위로 살짝 띄운다 */
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--glass-bg);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: 22px;
+    padding: 16px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 420px;
+    max-width: 92vw;
+    box-shadow: 0 16px 40px var(--glass-shadow), inset 0 1px 1px var(--glass-highlight);
   }
 `;

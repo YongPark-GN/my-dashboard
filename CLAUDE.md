@@ -19,21 +19,57 @@ src/
     DashboardContent.jsx       위젯 그리드, 배경 오로라, 테마 토글(data-theme)
     Dock.jsx                   하단 독 + 위젯 라이브러리/페이지 팝업 (한 번에 하나만 열림)
     PagePopup.jsx              페이지 목록 — 전환·생성·이름변경·복제·삭제
-    ClockWidget.jsx            시계
-    WeatherWidget.jsx          Open-Meteo 날씨 + BigDataCloud 역지오코딩(지명)
-    QuoteWidget.jsx            잠언 (bolls.life KRV=개역한글, 런타임 fetch)
-    CalendarWidget.jsx         달력 + 구글 캘린더 일정 (통합 위젯)
-    MemoWidget.jsx             탭 + 마크다운 메모, 뷰에서 체크박스 토글
-    MindMapWidget.jsx          마인드맵 목록 + 전체화면 에디터(베지어 커넥터)
+    widgetKit.jsx              위젯 공용 JSX 조각 (WidgetHeader / Empty / Row)
     Toast.jsx                  전역 토스트 — `toast('메시지')`
     ConfirmDialog.jsx          공용 확인 모달
+
+    ── 위젯 ──
+    ClockWidget.jsx            시계
+    WeatherWidget.jsx          Open-Meteo 날씨
+    AirQualityWidget.jsx       PM2.5/PM10/O₃/NO₂/자외선 (Open-Meteo Air Quality)
+    SunMoonWidget.jsx          일출·일몰 + 달 위상(로컬 계산)
+    QuoteWidget.jsx            잠언 (bolls.life KRV=개역한글, 런타임 fetch)
+    SearchWidget.jsx           검색창 (구글/네이버/유튜브/YT뮤직)
+    CalendarWidget.jsx         달력 + 구글 캘린더 일정 (통합 위젯)
+    TodoWidget.jsx             마감일 있는 할 일
+    DdayWidget.jsx             D-Day 카운터
+    MemoWidget.jsx             탭 + 마크다운 메모, 뷰에서 체크박스 토글
+    MindMapWidget.jsx          마인드맵 목록 + 전체화면 에디터(베지어 커넥터)
+    HabitWidget.jsx            습관 체크 (최근 7일 + 연속 일수)
+    PomodoroWidget.jsx         집중/휴식 타이머 (세션 수는 localStorage)
+    WorldClockWidget.jsx       세계 시계
+    BookmarkWidget.jsx         링크 바로가기 (favicon 그리드)
+    SnippetWidget.jsx          클립보드 스니펫
+    CurrencyWidget.jsx         환율 (frankfurter.dev, ECB 고시)
+    BudgetWidget.jsx           가계부 (이번 달 카테고리별 지출)
+    ChecklistWidget.jsx        범용 체크리스트 — `shopping`(장보기)이 이걸 쓴다
+    MusicWidget.jsx            유튜브 뮤직 (YouTube 임베드 플레이어)
+    GalleryWidget.jsx          사진 슬라이드쇼 (주소만 저장)
+    SystemWidget.jsx           배터리·네트워크·창 크기
   hooks/
     useWidgetLayout.js         페이지(위젯 배치 한 벌) + 활성 페이지의 순서·크기·표시
                                `reconcileLayout()` 예전 위젯 세트를 마이그레이션
                                `reconcilePages()` 페이지 이전 구조를 '기본' 페이지로 승격
+    useWidgetDoc.js            위젯 하나가 자기 Firestore 문서를 읽고 쓰는 공용 훅
     useGoogleCalendarAuth.js   구글 캘린더 OAuth 토큰
-  styles/theme.js              CSS 토큰 테마 + 전역 스타일 + 독 스타일
+  utils/geo.js                 위치 + 역지오코딩 (날씨·대기질·해와달 공용)
+  styles/
+    theme.js                   CSS 토큰 테마 + 전역 스타일 + 독 스타일
+    widgetUI.js                위젯 공용 스타일 상수 (widgetRoot / field / chip …)
 ```
+
+### 위젯 하나 추가하는 법
+
+1. `components/XxxWidget.jsx` — `widgetRoot`·`field` 등은 `styles/widgetUI.js`,
+   `WidgetHeader`·`Empty`·`Row` 는 `components/widgetKit.jsx` 에서 가져다 쓴다.
+   저장이 필요하면 `useWidgetDoc(userId, 'xxxWidget', DEFAULTS, '이름')`.
+2. `hooks/useWidgetLayout.js` 의 `DEFAULT_ORDER` 와 `DEFAULT_SIZES` 에 id 등록.
+   기본으로 켜두고 싶을 때만 `DEFAULT_VISIBLE` 에도 넣는다.
+3. `components/Dock.jsx` 의 `WIDGET_GROUPS` 에 이름 등록.
+4. `components/DashboardContent.jsx` 의 `renderWidgetContent` 에 `case` 추가.
+
+기존 사용자 레이아웃은 `reconcileLayout` 이 자동 정리한다 — **새 위젯은 순서에만
+끼워 넣고 켜지지는 않는다.** 여러 개를 한꺼번에 추가해도 기존 배치가 망가지지 않도록.
 
 ## 규약 (중요)
 
@@ -75,9 +111,10 @@ src/
 
 - 위젯 카드는 `iosLiquidGlassWidget` + `className="lg-widget"` 조합
 - Firestore 저장 실패는 조용히 삼키지 말고 `toast('...실패했습니다.')`로 알린다
-- 위젯 추가/삭제 시 `useWidgetLayout.js`의 `DEFAULT_ORDER`, `DEFAULT_SIZES`,
-  `REMOVED` 와 `Dock.jsx`의 `WIDGET_NAMES` 를 함께 갱신할 것
-  (기존 사용자 레이아웃은 `reconcileLayout`이 자동 정리)
+- 위젯 추가/삭제 절차는 위의 "위젯 하나 추가하는 법" 참고
+- 독은 **아이콘만** 둔다. 뜻은 `title`/`aria-label` 로 전하고, 활성 상태는 파란 발광이
+  아니라 아이콘 색 + 아래 점(`.ios-dock-item.active::after`)으로 조용히 표시한다.
+  독 위로 뜨는 팝업의 껍데기는 `.ios-dock-popup` 이 맡는다 (위치를 한 곳에서 관리)
 
 ## 데이터 경로
 
@@ -88,6 +125,13 @@ src/
 - `users/{uid}/dashboard/memoWidget` — 메모 (`memos` 배열)
 - `users/{uid}/dashboard/googleCalendar` — 캘린더 토큰
 - `users/{uid}/mindmaps/{mapId}` — 마인드맵
+- `useWidgetDoc` 를 쓰는 위젯은 각자 `users/{uid}/dashboard/{docId}` 한 장을 쓴다:
+  `todoWidget`, `ddayWidget`, `habitWidget`, `budgetWidget`, `worldClockWidget`,
+  `bookmarkWidget`, `snippetWidget`, `shoppingWidget`, `musicWidget`, `galleryWidget`
+
+위젯 내용은 **사용자 단위**라 페이지가 달라도 같은 데이터를 본다 (페이지가 나누는 건 배치뿐).
+회사/집에서 다른 내용을 보고 싶다면 위젯이 아니라 그 안의 탭·목록으로 나눌 것.
+Firestore 규칙은 `users/{uid}/**` 를 통째로 허용하므로 문서를 늘려도 규칙 변경은 필요 없다.
 
 ## 배포
 

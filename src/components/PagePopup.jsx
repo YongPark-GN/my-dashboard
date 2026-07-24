@@ -4,16 +4,8 @@ import { Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
 import { MAX_PAGES } from '../hooks/useWidgetLayout';
 
-const popupStyle = {
-  position: 'fixed', bottom: '104px', left: '50%', transform: 'translateX(-50%)',
-  background: 'var(--glass-bg)',
-  backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-  padding: '16px', borderRadius: '24px', zIndex: 999,
-  border: '1px solid var(--glass-border)',
-  boxShadow: '0 16px 40px var(--glass-shadow), inset 0 1px 1px var(--glass-highlight)',
-  display: 'flex', flexDirection: 'column', gap: '8px',
-  width: '320px', maxWidth: '90vw', maxHeight: '52vh', overflowY: 'auto'
-};
+// 껍데기(위치·유리 재질)는 독과 같이 관리되도록 .ios-dock-popup 클래스가 맡는다.
+const popupStyle = { width: '320px', gap: '8px', maxHeight: '52vh', overflowY: 'auto' };
 
 const inputStyle = {
   flex: 1, minWidth: 0, background: 'var(--field-bg)', border: '1px solid var(--field-border)',
@@ -49,7 +41,7 @@ export default function PagePopup({ layout }) {
 
   return (
     <>
-      <div style={popupStyle}>
+      <div className="ios-dock-popup" style={popupStyle}>
         <div style={{ fontSize: '0.72rem', color: 'var(--txt-faint)', fontWeight: '600', padding: '0 4px' }}>
           페이지마다 위젯 배치가 따로 저장됩니다
         </div>

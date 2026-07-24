@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from './Toast';
+import { getPlace } from '../utils/geo';
 
 // WMO weather interpretation codes → 한글 상태 + 아이콘
 const WMO = {
@@ -29,8 +30,6 @@ const airQualityLabel = (pm25) => {
   return { text: '매우 나쁨', color: '#ff3b30' };
 };
 
-const SEOUL = { lat: 37.5665, lon: 126.978, label: '서울 (기본 위치)' };
-
 async function fetchWeather(lat, lon) {
   const fUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code`;
   const aUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5`;
@@ -55,19 +54,6 @@ async function fetchWeather(lat, lon) {
   };
 }
 
-// 좌표 → 실제 지명 (한국어). 키 불필요.
-async function reverseGeocode(lat, lon) {
-  try {
-    const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ko`);
-    if (!res.ok) return null;
-    const d = await res.json();
-    const local = d.locality || d.city;
-    const region = d.principalSubdivision;
-    if (local && region && !region.includes(local)) return `${local}, ${region}`;
-    return local || region || null;
-  } catch { return null; }
-}
-
 export default function WeatherWidget() {
   const [weather, setWeather] = useState(null);
   const [location, setLocation] = useState('위치 확인 중...');
@@ -76,33 +62,21 @@ export default function WeatherWidget() {
   useEffect(() => {
     let cancelled = false;
 
-    const load = async (lat, lon, label) => {
+    (async () => {
+      const loc = await getPlace();
+      if (cancelled) return;
+      setLocation(loc.label);
       try {
-        const data = await fetchWeather(lat, lon);
+        const data = await fetchWeather(loc.lat, loc.lon);
         if (cancelled) return;
         setWeather(data);
-        setLocation(label);
         setStatus('ok');
-      } catch (err) {
+      } catch {
         if (cancelled) return;
         setStatus('error');
         toast('날씨 정보를 불러오지 못했습니다.');
       }
-    };
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { latitude, longitude } = pos.coords;
-          const name = await reverseGeocode(latitude, longitude);
-          if (!cancelled) load(latitude, longitude, name || '내 위치');
-        },
-        () => load(SEOUL.lat, SEOUL.lon, SEOUL.label),
-        { timeout: 8000 }
-      );
-    } else {
-      load(SEOUL.lat, SEOUL.lon, SEOUL.label);
-    }
+    })();
 
     return () => { cancelled = true; };
   }, []);

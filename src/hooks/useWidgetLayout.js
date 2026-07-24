@@ -4,26 +4,44 @@ import { doc, onSnapshot, setDoc, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { toast } from '../components/Toast';
 
-const DEFAULT_ORDER = ['clock', 'weather', 'quote', 'calendar', 'memo', 'mindmap'];
+// 전체 위젯 목록(= 정렬 기준). 위젯을 추가하면 여기와 DEFAULT_SIZES, Dock 의 WIDGET_NAMES 를 함께 갱신한다.
+const DEFAULT_ORDER = [
+  'clock', 'weather', 'quote', 'calendar', 'memo', 'mindmap',
+  'todo', 'pomodoro', 'worldclock', 'dday', 'bookmark', 'snippet', 'currency',
+  'habit', 'budget', 'air', 'shopping', 'sunmoon', 'music', 'gallery', 'search', 'system'
+];
+
+// 새 사용자·새 페이지가 처음 보게 되는 위젯. 나머지는 독의 위젯 라이브러리에서 켠다.
+const DEFAULT_VISIBLE = ['clock', 'weather', 'quote', 'calendar', 'memo', 'mindmap'];
+
 const DEFAULT_SIZES = {
   clock: { width: 380, height: 240 }, weather: { width: 320, height: 260 },
   quote: { width: 360, height: 240 }, calendar: { width: 720, height: 380 },
-  memo: { width: 360, height: 320 }, mindmap: { width: 360, height: 260 }
+  memo: { width: 360, height: 320 }, mindmap: { width: 360, height: 260 },
+  todo: { width: 360, height: 340 }, pomodoro: { width: 340, height: 260 },
+  worldclock: { width: 340, height: 300 }, dday: { width: 340, height: 300 },
+  bookmark: { width: 380, height: 280 }, snippet: { width: 360, height: 300 },
+  currency: { width: 340, height: 300 }, habit: { width: 380, height: 320 },
+  budget: { width: 420, height: 360 }, air: { width: 360, height: 320 },
+  shopping: { width: 340, height: 320 }, sunmoon: { width: 360, height: 260 },
+  music: { width: 400, height: 380 }, gallery: { width: 380, height: 320 },
+  search: { width: 420, height: 220 }, system: { width: 320, height: 280 }
 };
 
 // 제거된 위젯 + 통합 마이그레이션. 저장된 예전 레이아웃을 현재 위젯 세트에 맞게 정리한다.
 const REMOVED = ['workflow', 'scheduler'];
 const reconcileLayout = (order, visible, sizes) => {
   const safeOrder = Array.isArray(order) ? order : DEFAULT_ORDER;
-  const safeVisible = Array.isArray(visible) ? visible : DEFAULT_ORDER;
+  const safeVisible = Array.isArray(visible) ? visible : DEFAULT_VISIBLE;
   const wasPreUpgrade = safeOrder.some(id => REMOVED.includes(id));
 
   const knownOrder = safeOrder.filter(id => DEFAULT_ORDER.includes(id));
   const newIds = DEFAULT_ORDER.filter(id => !safeOrder.includes(id)); // 새로 추가된 위젯
   const nextOrder = [...knownOrder, ...newIds];
 
-  const knownVisible = safeVisible.filter(id => DEFAULT_ORDER.includes(id));
-  const nextVisible = [...knownVisible, ...newIds]; // 새 위젯은 기본 표시
+  // 새 위젯은 순서에만 끼워 넣고 켜지는 않는다 — 안 그러면 한 번에 여러 개가
+  // 튀어나와 기존 배치를 망친다. 필요한 것만 독의 위젯 라이브러리에서 켜면 된다.
+  const nextVisible = safeVisible.filter(id => DEFAULT_ORDER.includes(id));
 
   let nextSizes = { ...DEFAULT_SIZES, ...(sizes || {}) };
   // 캘린더가 스케줄러와 통합되어 더 넓은 공간이 필요 → 예전 레이아웃이면 크기 재설정
@@ -44,7 +62,7 @@ const makePage = (name) => ({
   id: newPageId(),
   name,
   widgetOrder: [...DEFAULT_ORDER],
-  visibleWidgets: [...DEFAULT_ORDER],
+  visibleWidgets: [...DEFAULT_VISIBLE],
   widgetSizes: { ...DEFAULT_SIZES }
 });
 
@@ -223,7 +241,7 @@ export const useWidgetLayout = (userId) => {
   };
 
   const resetLayout = () => {
-    commitActivePage({ widgetOrder: [...DEFAULT_ORDER], visibleWidgets: [...DEFAULT_ORDER], widgetSizes: { ...DEFAULT_SIZES } });
+    commitActivePage({ widgetOrder: [...DEFAULT_ORDER], visibleWidgets: [...DEFAULT_VISIBLE], widgetSizes: { ...DEFAULT_SIZES } });
   };
 
   const handleDragStart = (id) => { if (!resizeTarget && !isLocked) setDraggingId(id); };
