@@ -150,5 +150,10 @@ export const iosDockTheme = `
     margin-top: 3px;
     opacity: 0.85;
     font-weight: 500;
+    /* 페이지 이름처럼 긴 라벨이 독을 밀어내지 않도록 */
+    max-width: 46px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 `;

@@ -1,6 +1,7 @@
 // components/Dock.jsx
 import React, { useState } from 'react';
-import { LayoutGrid, Lock, Unlock, RotateCcw, Maximize, Sun, Moon, LogOut } from 'lucide-react';
+import { LayoutGrid, Layers, Lock, Unlock, RotateCcw, Maximize, Sun, Moon, LogOut } from 'lucide-react';
+import PagePopup from './PagePopup';
 
 const WIDGET_NAMES = {
   clock: '시계', weather: '날씨', quote: '잠언',
@@ -8,7 +9,10 @@ const WIDGET_NAMES = {
 };
 
 export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
-  const [showLibrary, setShowLibrary] = useState(false);
+  // 독 팝업은 한 번에 하나만 (null | 'widgets' | 'pages')
+  const [openPanel, setOpenPanel] = useState(null);
+  const showLibrary = openPanel === 'widgets';
+  const togglePanel = (panel) => setOpenPanel(prev => (prev === panel ? null : panel));
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
@@ -20,6 +24,8 @@ export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
 
   return (
     <>
+      {openPanel === 'pages' && <PagePopup layout={layout} />}
+
       {showLibrary && (
         <div style={{
           position: 'fixed', bottom: '104px', left: '50%', transform: 'translateX(-50%)',
@@ -45,13 +51,18 @@ export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
           </div>
           <button onClick={() => { if (confirmReset()) layout.resetLayout(); }}
                   style={{ background: 'transparent', border: 'none', color: 'var(--txt-dim)', fontSize: '0.78rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center', padding: '4px' }}>
-            <RotateCcw size={13} strokeWidth={1.8} /> 배치 초기화
+            <RotateCcw size={13} strokeWidth={1.8} /> 이 페이지 배치 초기화
           </button>
         </div>
       )}
 
       <div className="ios-dock-container">
-        <button className={`ios-dock-item ${showLibrary ? 'active' : ''}`} onClick={() => setShowLibrary(!showLibrary)} title="위젯 라이브러리">
+        <button className={`ios-dock-item ${openPanel === 'pages' ? 'active' : ''}`} onClick={() => togglePanel('pages')} title="페이지 전환">
+          <Layers size={22} strokeWidth={1.5} />
+          <span>{layout.activePage?.name || '페이지'}</span>
+        </button>
+
+        <button className={`ios-dock-item ${showLibrary ? 'active' : ''}`} onClick={() => togglePanel('widgets')} title="위젯 라이브러리">
           <LayoutGrid size={22} strokeWidth={1.5} />
           <span>위젯</span>
         </button>
@@ -83,5 +94,5 @@ export default function Dock({ layout, onLogout, toggleTheme, isDarkMode }) {
 }
 
 function confirmReset() {
-  return window.confirm('위젯 배치와 크기를 기본값으로 되돌릴까요?');
+  return window.confirm('현재 페이지의 위젯 배치와 크기를 기본값으로 되돌릴까요?');
 }
