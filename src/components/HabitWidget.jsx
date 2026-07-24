@@ -1,9 +1,9 @@
 // components/HabitWidget.jsx — 습관 체크. 최근 7일을 한눈에 보고 그 자리에서 토글한다.
 import { useState } from 'react';
-import { Plus, X, Check } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import { useWidgetDoc, newId } from '../hooks/useWidgetDoc';
 import { widgetRoot, scrollArea, iconBtn, iconBtnActive, field, todayKey } from '../styles/widgetUI';
-import { WidgetHeader, Empty } from './widgetKit';
+import { WidgetHeader, Empty, DeleteBtn } from './widgetKit';
 
 const DEFAULTS = { habits: [] };
 
@@ -73,10 +73,7 @@ export default function HabitWidget({ userId }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px' }}>
                 <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.name}</span>
                 {streak > 0 && <span style={{ fontSize: '0.7rem', color: 'var(--accent-text)', fontWeight: '700', flexShrink: 0 }}>{streak}일 연속</span>}
-                <button onClick={() => remove(h.id)} title="삭제"
-                        style={{ background: 'none', border: 'none', color: 'var(--txt-faint)', cursor: 'pointer', display: 'flex', padding: '2px' }}>
-                  <X size={13} strokeWidth={2.2} />
-                </button>
+                <DeleteBtn onClick={() => remove(h.id)} />
               </div>
               <div style={{ display: 'flex', gap: '5px' }}>
                 {week.map(day => {

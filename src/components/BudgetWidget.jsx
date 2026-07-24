@@ -1,9 +1,9 @@
 // components/BudgetWidget.jsx — 이번 달 지출 요약. 카테고리별 비중을 막대로 보여준다.
 import { useState } from 'react';
-import { Plus, X, Check } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import { useWidgetDoc, newId } from '../hooks/useWidgetDoc';
 import { widgetRoot, scrollArea, iconBtn, iconBtnActive, field, todayKey } from '../styles/widgetUI';
-import { WidgetHeader, Empty } from './widgetKit';
+import { WidgetHeader, Empty, DeleteBtn } from './widgetKit';
 
 const DEFAULTS = { entries: [], monthlyLimit: 0 };
 
@@ -96,10 +96,7 @@ export default function BudgetWidget({ userId }) {
               <div style={{ fontSize: '0.66rem', color: 'var(--txt-faint)' }}>{e.date?.slice(5)} · {catOf(e.category).label}</div>
             </div>
             <span style={{ fontSize: '0.85rem', fontWeight: '600', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>{won(Number(e.amount) || 0)}원</span>
-            <button onClick={() => remove(e.id)} title="삭제"
-                    style={{ background: 'none', border: 'none', color: 'var(--txt-faint)', cursor: 'pointer', display: 'flex', padding: '2px' }}>
-              <X size={13} strokeWidth={2.2} />
-            </button>
+            <DeleteBtn onClick={() => remove(e.id)} />
           </div>
         ))}
       </div>

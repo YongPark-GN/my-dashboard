@@ -1,6 +1,7 @@
 // components/widgetKit.jsx — 위젯들이 공유하는 자잘한 JSX 조각.
 // 스타일 상수는 styles/widgetUI.js 에 있다.
 // 색은 반드시 CSS 토큰만 쓴다 (라이트/다크가 함께 바뀌어야 하므로).
+import { X } from 'lucide-react';
 
 /** 위젯 상단 제목 줄. right 에 버튼 등을 넣는다. */
 export function WidgetHeader({ title, sub, right }) {
@@ -33,5 +34,15 @@ export function Row({ children, onClick, style }) {
          style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '7px 2px', borderBottom: '1px solid var(--divider)', cursor: onClick ? 'pointer' : 'default', ...style }}>
       {children}
     </div>
+  );
+}
+
+/** 목록 행의 유령(배경 없는) 삭제 버튼. onClick 에서 stopPropagation 등은 각자 처리. */
+export function DeleteBtn({ onClick, title = '삭제' }) {
+  return (
+    <button onClick={onClick} title={title}
+            style={{ background: 'none', border: 'none', color: 'var(--txt-faint)', cursor: 'pointer', display: 'flex', padding: '2px' }}>
+      <X size={13} strokeWidth={2.2} />
+    </button>
   );
 }

@@ -1,13 +1,13 @@
 // components/DdayWidget.jsx — 마감·릴리스·기념일까지 남은 일수.
 import { useState } from 'react';
-import { Plus, X, Check } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import { useWidgetDoc, newId } from '../hooks/useWidgetDoc';
-import { widgetRoot, scrollArea, iconBtn, iconBtnActive, field, todayKey } from '../styles/widgetUI';
-import { WidgetHeader, Empty, Row } from './widgetKit';
+import { widgetRoot, scrollArea, iconBtn, iconBtnActive, field, todayKey, daysUntil } from '../styles/widgetUI';
+import { WidgetHeader, Empty, Row, DeleteBtn } from './widgetKit';
 
 const DEFAULTS = { items: [] };
 
-const diffDays = (date) => Math.round((new Date(`${date}T00:00:00`) - new Date(`${todayKey()}T00:00:00`)) / 86400000);
+const diffDays = daysUntil;
 
 // D-3 / D-DAY / D+12
 const ddayLabel = (n) => (n === 0 ? 'D-DAY' : n > 0 ? `D-${n}` : `D+${-n}`);
@@ -68,10 +68,7 @@ export default function DdayWidget({ userId }) {
               <span style={{ fontSize: '1.05rem', fontWeight: '700', color: ddayColor(n), fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                 {ddayLabel(n)}
               </span>
-              <button onClick={() => remove(item.id)} title="삭제"
-                      style={{ background: 'none', border: 'none', color: 'var(--txt-faint)', cursor: 'pointer', display: 'flex', padding: '2px' }}>
-                <X size={13} strokeWidth={2.2} />
-              </button>
+              <DeleteBtn onClick={() => remove(item.id)} />
             </Row>
           );
         })}

@@ -1,16 +1,16 @@
 // components/TodoWidget.jsx — 마감일 있는 할 일. 메모 위젯과 달리 완료/기한 개념이 있다.
 import { useState } from 'react';
-import { Plus, X, Calendar as CalIcon } from 'lucide-react';
+import { Plus, Calendar as CalIcon } from 'lucide-react';
 import { useWidgetDoc, newId } from '../hooks/useWidgetDoc';
-import { widgetRoot, scrollArea, iconBtn, field, chip, todayKey } from '../styles/widgetUI';
-import { WidgetHeader, Empty, Row } from './widgetKit';
+import { widgetRoot, scrollArea, iconBtn, field, chip, daysUntil } from '../styles/widgetUI';
+import { WidgetHeader, Empty, Row, DeleteBtn } from './widgetKit';
 
 const DEFAULTS = { items: [] };
 
 // 마감일까지 남은 일수 → 라벨 + 색
 const dueInfo = (due) => {
   if (!due) return null;
-  const diff = Math.round((new Date(`${due}T00:00:00`) - new Date(`${todayKey()}T00:00:00`)) / 86400000);
+  const diff = daysUntil(due);
   if (diff < 0) return { text: `${-diff}일 지남`, color: 'var(--danger)' };
   if (diff === 0) return { text: '오늘', color: 'var(--danger)' };
   if (diff === 1) return { text: '내일', color: '#ff9500' };
@@ -76,10 +76,7 @@ export default function TodoWidget({ userId }) {
                   <CalIcon size={11} strokeWidth={2} />{d.text}
                 </span>
               )}
-              <button onClick={() => remove(item.id)} title="삭제"
-                      style={{ background: 'none', border: 'none', color: 'var(--txt-faint)', cursor: 'pointer', display: 'flex', padding: '2px' }}>
-                <X size={13} strokeWidth={2.2} />
-              </button>
+              <DeleteBtn onClick={() => remove(item.id)} />
             </Row>
           );
         })}

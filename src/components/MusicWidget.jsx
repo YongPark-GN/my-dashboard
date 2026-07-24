@@ -7,7 +7,7 @@ import { Plus, X, Check, Play, ExternalLink, Music } from 'lucide-react';
 import { useWidgetDoc, newId } from '../hooks/useWidgetDoc';
 import { toast } from './Toast';
 import { widgetRoot, scrollArea, iconBtn, iconBtnActive, field } from '../styles/widgetUI';
-import { WidgetHeader, Empty, Row } from './widgetKit';
+import { WidgetHeader, Empty, Row, DeleteBtn } from './widgetKit';
 
 const DEFAULTS = { tracks: [], lastId: '' };
 
@@ -133,10 +133,7 @@ export default function MusicWidget({ userId }) {
                style={{ color: 'var(--txt-faint)', display: 'flex', padding: '2px' }}>
               <ExternalLink size={13} strokeWidth={2} />
             </a>
-            <button onClick={(e) => { e.stopPropagation(); remove(t.id); }} title="삭제"
-                    style={{ background: 'none', border: 'none', color: 'var(--txt-faint)', cursor: 'pointer', display: 'flex', padding: '2px' }}>
-              <X size={13} strokeWidth={2.2} />
-            </button>
+            <DeleteBtn onClick={(e) => { e.stopPropagation(); remove(t.id); }} />
           </Row>
         ))}
       </div>

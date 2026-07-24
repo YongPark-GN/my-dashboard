@@ -19,7 +19,7 @@ src/
     DashboardContent.jsx       위젯 그리드, 배경 오로라, 테마 토글(data-theme)
     Dock.jsx                   하단 독 + 위젯 라이브러리/페이지 팝업 (한 번에 하나만 열림)
     PagePopup.jsx              페이지 목록 — 전환·생성·이름변경·복제·삭제
-    widgetKit.jsx              위젯 공용 JSX 조각 (WidgetHeader / Empty / Row)
+    widgetKit.jsx              위젯 공용 JSX 조각 (WidgetHeader / Empty / Row / DeleteBtn)
     Toast.jsx                  전역 토스트 — `toast('메시지')`
     ConfirmDialog.jsx          공용 확인 모달
 
@@ -56,12 +56,13 @@ src/
   styles/
     theme.js                   CSS 토큰 테마 + 전역 스타일 + 독 스타일
     widgetUI.js                위젯 공용 스타일 상수 (widgetRoot / field / chip …)
+                               + 헬퍼 todayKey / daysUntil(YYYY-MM-DD → 남은 일수)
 ```
 
 ### 위젯 하나 추가하는 법
 
 1. `components/XxxWidget.jsx` — `widgetRoot`·`field` 등은 `styles/widgetUI.js`,
-   `WidgetHeader`·`Empty`·`Row` 는 `components/widgetKit.jsx` 에서 가져다 쓴다.
+   `WidgetHeader`·`Empty`·`Row`·`DeleteBtn`(목록 행 삭제 버튼) 은 `components/widgetKit.jsx` 에서 가져다 쓴다.
    저장이 필요하면 `useWidgetDoc(userId, 'xxxWidget', DEFAULTS, '이름')`.
 2. `hooks/useWidgetLayout.js` 의 `DEFAULT_ORDER` 와 `DEFAULT_SIZES` 에 id 등록.
    기본으로 켜두고 싶을 때만 `DEFAULT_VISIBLE` 에도 넣는다.

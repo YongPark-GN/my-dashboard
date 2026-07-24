@@ -41,3 +41,7 @@ export const todayKey = (d = new Date()) => {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
+
+/** 오늘부터 YYYY-MM-DD 까지 남은 일수 (지난 날짜는 음수). */
+export const daysUntil = (date) =>
+  Math.round((new Date(`${date}T00:00:00`) - new Date(`${todayKey()}T00:00:00`)) / 86400000);

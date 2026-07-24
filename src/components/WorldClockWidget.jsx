@@ -1,9 +1,9 @@
 // components/WorldClockWidget.jsx — 여러 타임존의 현재 시각. 해외 미팅 시간 확인용.
 import { useState, useEffect } from 'react';
-import { Plus, X, Check } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import { useWidgetDoc, newId } from '../hooks/useWidgetDoc';
 import { widgetRoot, scrollArea, iconBtn, iconBtnActive, field } from '../styles/widgetUI';
-import { WidgetHeader, Empty, Row } from './widgetKit';
+import { WidgetHeader, Empty, Row, DeleteBtn } from './widgetKit';
 
 const PRESETS = [
   { label: '서울', tz: 'Asia/Seoul' }, { label: '도쿄', tz: 'Asia/Tokyo' },
@@ -88,10 +88,7 @@ export default function WorldClockWidget({ userId }) {
               <span style={{ fontSize: '1.15rem', fontWeight: '500', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px', flexShrink: 0 }}>
                 {now.toLocaleTimeString('ko-KR', { timeZone: z.tz, hour: '2-digit', minute: '2-digit' })}
               </span>
-              <button onClick={() => remove(z.id)} title="삭제"
-                      style={{ background: 'none', border: 'none', color: 'var(--txt-faint)', cursor: 'pointer', display: 'flex', padding: '2px' }}>
-                <X size={13} strokeWidth={2.2} />
-              </button>
+              <DeleteBtn onClick={() => remove(z.id)} />
             </Row>
           );
         })}
